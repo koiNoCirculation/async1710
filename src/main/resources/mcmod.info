@@ -1,0 +1,16 @@
+[
+{
+  "modid": "async1710",
+  "name": "async 1710",
+  "description": "async 1710",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "",
+  "updateUrl": "",
+  "authorList": ["~~~~~"],
+  "credits": "async 1710",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]
