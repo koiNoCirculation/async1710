@@ -68,12 +68,12 @@ public class MixinEntityAITasks {
         return executingTaskEntriesSet.add((EntityAITasks.EntityAITaskEntry) e);
     }
 
-    @Redirect(method = "onUpdateTasks", at = @At(value = "INVOKE", ordinal = 0, target = "Ljava/util/List;iterator()Ljava/util/Iterator;", remap = false))
+    @Redirect(method = "onUpdateTasks", at = @At(value = "INVOKE", ordinal = 1, target = "Ljava/util/List;iterator()Ljava/util/Iterator;", remap = false))
     public Iterator executingTaskEntries_iterator_onUpdateTasks1(List list) {
         return executingTaskEntriesSet.iterator();
     }
 
-    @Redirect(method = "onUpdateTasks", at = @At(value = "INVOKE", ordinal = 1, target = "Ljava/util/List;iterator()Ljava/util/Iterator;", remap = false))
+    @Redirect(method = "onUpdateTasks", at = @At(value = "INVOKE", ordinal = 2, target = "Ljava/util/List;iterator()Ljava/util/Iterator;", remap = false))
     public Iterator executingTaskEntries_iterator_onUpdateTasks2(List list) {
         return executingTaskEntriesSet.iterator();
     }

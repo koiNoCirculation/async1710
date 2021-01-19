@@ -23,6 +23,7 @@
     "net.minecraft.entity.MixinEntityTracker",
     "net.minecraft.entity.MixinEntity",
     "net.minecraft.entity.MixinEntityPlayerMP",
+    "net.minecraft.entity.ai.MixinEntityAITasks",
     "net.minecraft.tileentity.MixinTileEntity",
     "net.minecraft.util.MixinIntHashMap",
     "net.minecraft.util.MixinLongHashMap"

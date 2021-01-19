@@ -30,6 +30,39 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 
+/**
+ * TODO:
+ * A detailed walkthrough of the error, its code path and all known details is as follows:
+ * ---------------------------------------------------------------------------------------
+ *
+ * -- Head --
+ * Stacktrace:
+ * 	at java.util.LinkedList$ListItr.checkForComodification(LinkedList.java:966)
+ * 	at java.util.LinkedList$ListItr.next(LinkedList.java:888)
+ * 	at net.minecraft.entity.player.EntityPlayerMP.handler$onUpdate$zzk000(EntityPlayerMP.java:1338)
+ * 	at net.minecraft.entity.player.EntityPlayerMP.onUpdate(EntityPlayerMP.java)
+ * 	at net.minecraft.world.World.updateEntityWithOptionalForce(World.java:2315)
+ * 	at net.minecraft.world.WorldServer.updateEntityWithOptionalForce(WorldServer.java:684)
+ * 	at net.minecraft.world.World.updateEntity(World.java:2275)
+ *
+ * -- Entity being ticked --
+ * Details:
+ * 	Entity Type: null (net.minecraft.entity.player.EntityPlayerMP)
+ * 	Entity ID: 229
+ * 	Entity Name: Player468
+ * 	Entity's Exact location: -163.76, 71.93, 262.36
+ * 	Entity's Block location: World: (-164,71,262), Chunk: (at 12,4,6 in -11,16; contains blocks -176,0,256 to -161,255,271), Region: (-1,0; contains chunks -32,0 to -1,31, blocks -512,0,0 to -1,255,511)
+ * 	Entity's Momentum: -0.64, 0.90, 0.10
+ * Stacktrace:
+ * 	at net.minecraft.world.World.lambda$null$2(World.java:4859)
+ * 	at java.util.concurrent.CompletableFuture$AsyncSupply.run$$$capture(CompletableFuture.java:1604)
+ * 	at java.util.concurrent.CompletableFuture$AsyncSupply.run(CompletableFuture.java)
+ * 	at java.util.concurrent.CompletableFuture$AsyncSupply.exec(CompletableFuture.java:1596)
+ * 	at java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:289)
+ * 	at java.util.concurrent.ForkJoinPool$WorkQueue.runTask(ForkJoinPool.java:1056)
+ * 	at java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1692)
+ * 	at java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:175)
+ */
 @Mixin(EntityPlayerMP.class)
 public abstract class MixinEntityPlayerMP extends EntityPlayer {
     @Shadow @Mutable
