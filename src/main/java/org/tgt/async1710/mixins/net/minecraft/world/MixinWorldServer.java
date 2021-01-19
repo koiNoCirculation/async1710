@@ -1,9 +1,12 @@
 package org.tgt.async1710.mixins.net.minecraft.world;
 
+import com.google.common.collect.Lists;
 import cpw.mods.fml.common.FMLCommonHandler;
 import io.netty.util.internal.ConcurrentSet;
+import net.minecraft.block.Block;
+import net.minecraft.block.material.Material;
 import net.minecraft.crash.CrashReport;
-import net.minecraft.entity.Entity;
+import net.minecraft.crash.CrashReportCategory;
 import net.minecraft.entity.EntityTracker;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.network.play.server.S03PacketTimeUpdate;
@@ -14,6 +17,8 @@ import net.minecraft.util.ChunkCoordinates;
 import net.minecraft.util.IProgressUpdate;
 import net.minecraft.util.ReportedException;
 import net.minecraft.world.*;
+import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraft.world.storage.ISaveHandler;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.MinecraftForge;
@@ -29,7 +34,6 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.tgt.async1710.TaskSubmitter;
-import org.tgt.async1710.WorldUtils;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
@@ -67,11 +71,15 @@ public abstract class MixinWorldServer extends World implements Runnable {
     @Shadow
     public abstract void saveAllChunks(boolean p_73044_1_, IProgressUpdate p_73044_2_) throws MinecraftException;
 
+    /**
+     * block tick用一个区块做key的集合比较好，这样可以按照区块去tick block，保证chunk的unload发生在tick的最后。
+     */
+    private ConcurrentHashMap<ChunkCoordIntPair, Queue<NextTickListEntry>> chunkTickListMap = new ConcurrentHashMap<>();
+
     private boolean running = false;
 
     public void allTick() {
         long i = System.nanoTime();
-        ((TaskSubmitter)this).runTasks();
         if (tickCounter % 20 == 0) {
             ((DedicatedServer)mcServer).getConfigurationManager().
                     sendPacketToAllPlayersInDimension(
@@ -91,7 +99,6 @@ public abstract class MixinWorldServer extends World implements Runnable {
             throw new ReportedException(crashreport);
         }
 
-        ((TaskSubmitter)this).runTasks();
         try {
             updateEntities();
         } catch (Throwable throwable) {
@@ -99,13 +106,10 @@ public abstract class MixinWorldServer extends World implements Runnable {
             addWorldInfoToCrashReport(crashreport1);
             throw new ReportedException(crashreport1);
         }
-
-        ((TaskSubmitter)this).runTasks();
-        FMLCommonHandler.instance().instance().onPostWorldTick((WorldServer)(Object)this);
-
         theEntityTracker.updateTrackedEntities();
 
-        ((TaskSubmitter)this).runTasks();
+        FMLCommonHandler.instance().instance().onPostWorldTick((WorldServer)(Object)this);
+        this.chunkProvider.unloadQueuedChunks();
         if (this.tickCounter % 900 == 0) {
             try {
                 this.saveAllChunks(true, null);
@@ -125,22 +129,11 @@ public abstract class MixinWorldServer extends World implements Runnable {
 
     private void initialChunkLoad() {
         ChunkCoordinates chunkcoordinates = getSpawnPoint();
-        long timelast = System.currentTimeMillis();
-        int i = 0;
         mixinLogger.info("Preparing start region for level " + provider.dimensionId);
         for (int k = -192; k <= 192; k += 16)
         {
             for (int l = -192; l <= 192; l += 16)
             {
-                long timeNow = System.currentTimeMillis();
-
-                if (timeNow - timelast > 1000L)
-                {
-                    mixinLogger.info("Preparing spawn area {}", i * 100 / 625);
-                    timelast = timeNow;
-                }
-
-                ++i;
                 chunkProvider.loadChunk(chunkcoordinates.posX + k >> 4, chunkcoordinates.posZ + l >> 4);
             }
         }
@@ -197,40 +190,6 @@ public abstract class MixinWorldServer extends World implements Runnable {
         }
     }
 
-    /*
-    @Shadow
-    public abstract void updateAllPlayersSleepingFlag();
-
-    @Inject(method = "updateAllPlayersSleepingFlag", at = @At(value = "HEAD"), cancellable = true)
-    private void _updateAllPlayersSleepingFlag(CallbackInfo ci) throws ExecutionException, InterruptedException, TimeoutException {
-        if(Thread.currentThread().getName() != ((WorldUtils)this).getThreadName() && ((WorldUtils)this).getRunning()) {
-            FutureTask<Integer> ft = new FutureTask<>(() -> {
-                updateAllPlayersSleepingFlag();
-                return 0;
-            });
-            ((TaskSubmitter)this).submit(ft);
-            ft.get(1000, TimeUnit.SECONDS);
-            ci.cancel();
-        }
-    }
-
-    @Shadow
-    public abstract void updateEntityWithOptionalForce(Entity p_72866_1_, boolean p_72866_2_);
-
-    @Inject(method = "updateEntityWithOptionalForce", at = @At(value = "HEAD"), cancellable = true)
-    private void _updateEntityWithOptionalForce(Entity p_72866_1_, boolean p_72866_2_, CallbackInfo ci) throws ExecutionException, InterruptedException, TimeoutException {
-        if(Thread.currentThread().getName() != ((WorldUtils)this).getThreadName() && ((WorldUtils)this).getRunning()) {
-            FutureTask<Integer> ft = new FutureTask<>(() -> {
-                updateEntityWithOptionalForce(p_72866_1_, p_72866_2_);
-                return 0;
-            });
-            ((TaskSubmitter)this).submit(ft);
-            ft.get(1000, TimeUnit.SECONDS);
-            ci.cancel();
-        }
-    }
-    */
-
     @Shadow
     public abstract List func_147486_a(int p_147486_1_, int p_147486_2_, int p_147486_3_, int p_147486_4_, int p_147486_5_, int p_147486_6_);
 
@@ -247,16 +206,6 @@ public abstract class MixinWorldServer extends World implements Runnable {
     @Shadow protected Set<ChunkCoordIntPair> doneChunks;
 
     private Set<NextTickListEntry> pendingTickSetEntriesThisTick = new ConcurrentSet<>();
-
-    @Inject(method = "func_147486_a", remap = false, at = @At(value = "HEAD"), cancellable = true)
-    private void  _func_147486_a(int p_147486_1_, int p_147486_2_, int p_147486_3_, int p_147486_4_, int p_147486_5_, int p_147486_6_, CallbackInfoReturnable<List> cir) throws ExecutionException, InterruptedException, TimeoutException {
-        if(Thread.currentThread().getName() != ((WorldUtils)this).getThreadName() && ((WorldUtils)this).getRunning()) {
-            FutureTask<List> ft = new FutureTask<>(() -> func_147486_a(p_147486_1_,p_147486_2_,p_147486_3_, p_147486_4_,p_147486_5_,p_147486_6_));
-            ((TaskSubmitter)this).submit(ft);
-            cir.setReturnValue(ft.get(1000, TimeUnit.SECONDS));
-        }
-    }
-
     /**
      * 继承接口，但是接口在超类的mixin
      */
@@ -271,36 +220,6 @@ public abstract class MixinWorldServer extends World implements Runnable {
         return running;
     }
 
-
-    /**
-     * replace pendingTickListEntriesThisTick to pendingTickSetEntriesThisTick
-     */
-    @Redirect(method = "tickUpdates", at = @At(value = "INVOKE", target = "Ljava/util/List;add(Ljava/lang/Object;)Z", remap = false))
-    public <E> boolean handlependingTickListEntriesThisTick1(List list, E e) {
-        return pendingTickSetEntriesThisTick.add((NextTickListEntry) e);
-    }
-
-    @Redirect(method = "tickUpdates", at = @At(value = "INVOKE", target = "Ljava/util/List;iterator()Ljava/util/Iterator;", remap = false))
-    public Iterator<NextTickListEntry> handlependingTickListEntriesThisTick2(List list) {
-        return pendingTickSetEntriesThisTick.iterator();
-    }
-
-    @Redirect(method = "tickUpdates", at = @At(value = "INVOKE", target = "Ljava/util/List;clear()V", remap = false))
-    public void handlependingTickListEntriesThisTick3(List list) {
-        pendingTickSetEntriesThisTick.clear();
-    }
-
-    @Redirect(method = "getPendingBlockUpdates", at = @At(value = "INVOKE", ordinal = 1, target = "Ljava/util/List;iterator()Ljava/util/Iterator;", remap = false))
-    public Iterator<NextTickListEntry> handleIteratorRemove1(List list)  {
-        return pendingTickSetEntriesThisTick.iterator();
-        /**
-         * if (!this.pendingTickListEntriesThisTick.isEmpty())
-         *                 {
-         *                     logger.debug("toBeTicked = " + this.pendingTickListEntriesThisTick.size());
-         *                 }
-         * zhe kuai bu gaile ~
-         */
-    }
     /**
      * 替换集合
      * @param p_i45284_1_
@@ -323,5 +242,185 @@ public abstract class MixinWorldServer extends World implements Runnable {
         pendingTickListEntriesTreeSet = declaredConstructor.newInstance(new ConcurrentSkipListMap());
         doneChunks = new ConcurrentSet<>();
         customTeleporters = new CopyOnWriteArrayList<>();
+    }
+
+
+    /**
+     * block tick相关
+     */
+    @Inject(method = "isBlockTickScheduledThisTick", at = @At(value = "INVOKE"),cancellable = true)
+    public void isBlockTickScheduledThisTick(int p_147477_1_, int p_147477_2_, int p_147477_3_, Block p_147477_4_, CallbackInfoReturnable<Boolean> cir)
+    {
+        NextTickListEntry nextticklistentry = new NextTickListEntry(p_147477_1_, p_147477_2_, p_147477_3_, p_147477_4_);
+        Queue<NextTickListEntry> nextTickListEntries = chunkTickListMap.get(new ChunkCoordIntPair(p_147477_1_ >> 4, p_147477_3_ >> 4));
+        cir.setReturnValue(nextTickListEntries != null && nextTickListEntries.contains(nextticklistentry));
+    }
+
+    /**
+     * 这个是从区块反序列化nexttick
+     * @param p_147446_1_ x
+     * @param p_147446_2_ y
+     * @param p_147446_3_ z
+     * @param p_147446_4_
+     * @param p_147446_5_
+     * @param p_147446_6_
+     * @param ci
+     */
+    @Inject(method = "func_147446_b", at = @At(value = "INVOKE"), cancellable = true, remap = false)
+    public void func_147446_b(int p_147446_1_, int p_147446_2_, int p_147446_3_, Block p_147446_4_, int p_147446_5_, int p_147446_6_, CallbackInfo ci) {
+        NextTickListEntry nextticklistentry = new NextTickListEntry(p_147446_1_, p_147446_2_, p_147446_3_, p_147446_4_);
+        nextticklistentry.setPriority(p_147446_6_);
+
+        if (p_147446_4_.getMaterial() != Material.air)
+        {
+            nextticklistentry.setScheduledTime((long)p_147446_5_ + this.worldInfo.getWorldTotalTime());
+        }
+        ChunkCoordIntPair chunkCoordIntPair = new ChunkCoordIntPair(p_147446_1_ >> 4, p_147446_3_ >> 4);
+        Queue<NextTickListEntry> nextTickListEntries = chunkTickListMap.get(chunkCoordIntPair);
+        if(nextTickListEntries == null) {
+            nextTickListEntries = new ConcurrentLinkedQueue<>();
+            chunkTickListMap.put(chunkCoordIntPair, nextTickListEntries);
+        }
+        nextTickListEntries.add(nextticklistentry); //区块刚加出来，判你个鬼
+                                                    //hashset大概也是这个意思吧，通过这个监测有没有重复block tick的存在
+        /**
+        if (!this.pendingTickListEntriesHashSet.contains(nextticklistentry))
+        {
+            this.pendingTickListEntriesHashSet.add(nextticklistentry);
+            this.pendingTickListEntriesTreeSet.add(nextticklistentry);
+        }**/
+        ci.cancel();
+    }
+
+
+    /**
+     * 当前block坐标 +-20范围内的block updates
+     * 是拿来持久化当前区块的方块更新的，那就简单了.jpg
+     */
+    @Inject(method = "getPendingBlockUpdates", at = @At(value = "INVOKE"), cancellable = true)
+    public void getPendingBlockUpdates(Chunk p_72920_1_, boolean p_72920_2_, CallbackInfoReturnable<List> cir) {
+        ArrayList arraylist = null;
+        ChunkCoordIntPair chunkcoordintpair = p_72920_1_.getChunkCoordIntPair();
+        Queue<NextTickListEntry> nextTickListEntries = chunkTickListMap.get(chunkcoordintpair);
+        if(nextTickListEntries != null) {
+            arraylist = Lists.newArrayList(nextTickListEntries);
+        }
+        cir.setReturnValue(arraylist);
+    }
+
+
+    /**
+     * 方块更新etc
+     * @param p_72955_1_
+     */
+    @Inject(method = "tickUpdates", at = @At("HEAD"), cancellable = true)
+    public void tickUpdates(boolean p_72955_1_, CallbackInfoReturnable<Boolean> cir) {
+        chunkTickListMap.forEach(this::tickAChunk);
+        cir.setReturnValue(true);
+    }
+
+    /**
+     * 永远安全，chunk的卸载将全部被挤到最后在做，在那之前所有的方块都有机会被tick
+     * @param pair
+     * @param queue
+     */
+    public void tickAChunk(ChunkCoordIntPair pair, Queue<NextTickListEntry> queue) {
+        while (queue.peek() != null && queue.peek().scheduledTime <= worldInfo.getWorldTime()) {
+            NextTickListEntry nextticklistentry = queue.poll();
+            Block block = this.getBlock(nextticklistentry.xCoord, nextticklistentry.yCoord, nextticklistentry.zCoord);
+
+            if (block.getMaterial() != Material.air && Block.isEqualTo(block, nextticklistentry.func_151351_a()))
+            {
+                try
+                {
+                    block.updateTick(this, nextticklistentry.xCoord, nextticklistentry.yCoord, nextticklistentry.zCoord, this.rand);
+                }
+                catch (Throwable throwable1)
+                {
+                    CrashReport crashreport = CrashReport.makeCrashReport(throwable1, "Exception while ticking a block");
+                    CrashReportCategory crashreportcategory = crashreport.makeCategory("Block being ticked");
+                    int k;
+
+                    try
+                    {
+                        k = this.getBlockMetadata(nextticklistentry.xCoord, nextticklistentry.yCoord, nextticklistentry.zCoord);
+                    }
+                    catch (Throwable throwable)
+                    {
+                        k = -1;
+                    }
+
+                    CrashReportCategory.addBlockInfo(crashreportcategory, nextticklistentry.xCoord, nextticklistentry.yCoord, nextticklistentry.zCoord, block, k);
+                    throw new ReportedException(crashreport);
+                }
+            }
+        }
+    }
+
+    /**
+     * 触发方块更新
+     * @param x
+     * @param y
+     * @param z
+     * @param block
+     * @param p_147454_5_
+     * @param p_147454_6_
+     * @param ci
+     */
+    @Inject(method = "scheduleBlockUpdateWithPriority", at = @At("HEAD"), cancellable = true)
+    public void _scheduleBlockUpdateWithPriority(int x, int y, int z, Block block, int p_147454_5_, int p_147454_6_, CallbackInfo ci) {
+        NextTickListEntry nextticklistentry = new NextTickListEntry(x, y, z, block);
+        //Keeping here as a note for future when it may be restored.
+        //boolean isForced = getPersistentChunks().containsKey(new ChunkCoordIntPair(nextticklistentry.xCoord >> 4, nextticklistentry.zCoord >> 4));
+        //byte b0 = isForced ? 0 : 8;
+        byte b0 = 0;
+
+        if (this.scheduledUpdatesAreImmediate && block.getMaterial() != Material.air)
+        {
+            if (block.requiresUpdates())
+            {
+                b0 = 8;
+
+                if (this.checkChunksExist(nextticklistentry.xCoord - b0, nextticklistentry.yCoord - b0, nextticklistentry.zCoord - b0, nextticklistentry.xCoord + b0, nextticklistentry.yCoord + b0, nextticklistentry.zCoord + b0))
+                {
+                    Block block1 = this.getBlock(nextticklistentry.xCoord, nextticklistentry.yCoord, nextticklistentry.zCoord);
+
+                    if (block1.getMaterial() != Material.air && block1 == nextticklistentry.func_151351_a())
+                    {
+                        block1.updateTick(this, nextticklistentry.xCoord, nextticklistentry.yCoord, nextticklistentry.zCoord, this.rand);
+                    }
+                }
+
+                return;
+            }
+
+            p_147454_5_ = 1;
+        }
+
+        if (this.checkChunksExist(x - b0, y - b0, z - b0, x + b0, y + b0, z + b0))
+        {
+            if (block.getMaterial() != Material.air)
+            {
+                nextticklistentry.setScheduledTime((long)p_147454_5_ + this.worldInfo.getWorldTotalTime());
+                nextticklistentry.setPriority(p_147454_6_);
+            }
+            ChunkCoordIntPair chunkCoordIntPair = new ChunkCoordIntPair(x >> 4, z >> 4);
+            Queue<NextTickListEntry> nextTickListEntries = chunkTickListMap.get(chunkCoordIntPair);
+            if(nextTickListEntries == null) {
+                nextTickListEntries = new ConcurrentLinkedQueue<>();
+                chunkTickListMap.put(chunkCoordIntPair, nextTickListEntries);
+            }
+            nextTickListEntries.add(nextticklistentry);
+        }
+        ci.cancel();
+    }
+
+    /**
+     * 卸载区块的事情留在最后干
+     * @return
+     */
+    @Redirect(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/chunk/IChunkProvider;unloadQueuedChunks()Z"))
+    public boolean noopUnloadChunks(IChunkProvider iChunkProvider) {
+        return false;
     }
 }

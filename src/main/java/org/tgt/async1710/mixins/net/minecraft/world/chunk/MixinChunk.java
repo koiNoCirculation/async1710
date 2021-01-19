@@ -27,6 +27,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 区块需要在服务器刻的最后卸载来避免并发修改
+ */
 @Mixin(Chunk.class)
 public class MixinChunk implements ChunkGetLoadedEntities {
     @Shadow public Map chunkTileEntityMap;
@@ -124,7 +127,7 @@ public class MixinChunk implements ChunkGetLoadedEntities {
             }
             this.worldObj.addLoadedEntities(list);
         }
-        logger.info("{} entities and {} tiles", Arrays.stream(entitySets).map(e -> e.size()).reduce((a, b) -> a+b).get(), chunkTileEntityMap.size());
+        //logger.info("{} entities and {} tiles", Arrays.stream(entitySets).map(e -> e.size()).reduce((a, b) -> a+b).get(), chunkTileEntityMap.size());
         MinecraftForge.EVENT_BUS.post(new ChunkEvent.Load((Chunk)(Object) this));
         ci.cancel();
     }

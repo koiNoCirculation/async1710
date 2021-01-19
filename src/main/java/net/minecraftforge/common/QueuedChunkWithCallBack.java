@@ -127,7 +127,7 @@ public class QueuedChunkWithCallBack implements Supplier<Chunk> {
                 if(callback != null) {
                     callback.run();
                 }
-                logger.info("chunk at chunkx = {}, chunkz = {} finished, block at x = {}, y = 50, z = {} is {}", x, z,x << 4, z << 4, world.getBlock(x << 4, 50, z << 4).getClass());
+                //logger.info("chunk at chunkx = {}, chunkz = {} finished, block at x = {}, y = 50, z = {} is {}", x, z,x << 4, z << 4, world.getBlock(x << 4, 50, z << 4).getClass());
                 return chunk;
             }
         } catch (Exception e) {

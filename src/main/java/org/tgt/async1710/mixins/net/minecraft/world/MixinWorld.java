@@ -2,17 +2,19 @@ package org.tgt.async1710.mixins.net.minecraft.world;
 
 import cpw.mods.fml.common.FMLLog;
 import io.netty.util.internal.ConcurrentSet;
+import net.minecraft.block.Block;
 import net.minecraft.crash.CrashReport;
 import net.minecraft.crash.CrashReportCategory;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLiving;
 import net.minecraft.entity.EnumCreatureType;
+import net.minecraft.init.Blocks;
 import net.minecraft.profiler.Profiler;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.AxisAlignedBB;
+import net.minecraft.util.MathHelper;
 import net.minecraft.util.ReportedException;
-import net.minecraft.world.World;
-import net.minecraft.world.WorldProvider;
-import net.minecraft.world.WorldSettings;
+import net.minecraft.world.*;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.storage.ISaveHandler;
 import net.minecraftforge.common.ForgeModContainer;
@@ -29,14 +31,14 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.tgt.async1710.ChunkTileGroup;
+import org.tgt.async1710.GlobalExecutor;
 import org.tgt.async1710.TaskSubmitter;
 import org.tgt.async1710.WorldUtils;
 
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 @Mixin(World.class)
 public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
@@ -98,16 +100,6 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
         }
     }
 
-    /**
-     * NetHandlerPlayserver did patch it, but we need to patch it again
-     *
-     * @param p_147471_1_
-     * @param p_147471_2_
-     * @param p_147471_3_
-     */
-    @Shadow
-    public abstract void markBlockForUpdate(int p_147471_1_, int p_147471_2_, int p_147471_3_);
-
     @Shadow
     public List weatherEffects;
 
@@ -132,15 +124,6 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
     public abstract void updateEntity(Entity p_72870_1_);
 
     @Shadow
-    private boolean processingLoadedTiles;
-
-    protected ConcurrentSet<TileEntity> loadedTileEntitySet = new ConcurrentSet<>();
-
-    protected ConcurrentSet<TileEntity> toBeUnloadedTileEntitySet = new ConcurrentSet<>();
-
-    protected ConcurrentSet<TileEntity> addedTileEntitySet = new ConcurrentSet<>();
-
-    @Shadow
     public abstract boolean blockExists(int p_72899_1_, int p_72899_2_, int p_72899_3_);
 
     @Shadow
@@ -154,26 +137,14 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
     protected List worldAccesses;
 
     @Shadow
-    private List tileEntitiesToBeRemoved;
-
-    @Shadow
     public abstract void onEntityAdded(Entity p_72923_1_);
 
-    /*
-    @Inject(method = "markBlockForUpdate", at = @At("HEAD"), cancellable = true)
-    public void _markBlockForUpdate(int p_147471_1_, int p_147471_2_, int p_147471_3_, CallbackInfo ci) throws ExecutionException, InterruptedException, TimeoutException {
-        if (Thread.currentThread().getName() != ((WorldUtils) this).getThreadName() && getRunning()) {
-            FutureTask<Integer> ft = new FutureTask<>(() -> {
-                markBlockForUpdate(p_147471_1_, p_147471_2_, p_147471_3_);
-                return 0;
-            });
-            submit(ft);
-            ft.get(1000, TimeUnit.SECONDS);
-            ci.cancel();
-        }
-    }
-    */
 
+    @Shadow public abstract Block getBlock(int p_147439_1_, int p_147439_2_, int p_147439_3_);
+
+    @Shadow public abstract List getEntitiesWithinAABBExcludingEntity(Entity p_72839_1_, AxisAlignedBB p_72839_2_);
+
+    @Shadow public abstract void updateNeighborsAboutBlockChange(int x, int yPos, int z, Block blockIn);
 
     /**
      * 由于tiles和block的list过大，因此不能直接替换成copyonwrite，仅仅在遍历的时候提供copy
@@ -266,7 +237,7 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
          *                 } catch (Throwable var12) {
          *                     crashreport = CrashReport.makeCrashReport(var12, "Ticking entity");
          *                     crashreportcategory = crashreport.makeCategory("Entity being ticked");
-         *                     entity.addEntityCrashInfo(crashreportcategory);
+         *                     entity.addEntityCrashInfo(crashreportcategory);NP
          *                     if (!ForgeModContainer.removeErroringEntities) {
          *                         throw new ReportedException(crashreport);
          *                     }
@@ -292,115 +263,109 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
          *             this.theProfiler.endSection();
          *         }
          */
-        Iterator<Entity> iteratorLoadedEntites = loadedEntitySet.iterator();
-        while (iteratorLoadedEntites.hasNext()) {
-            Entity entity = iteratorLoadedEntites.next();
-
-            if (entity.ridingEntity != null) {
-                if (!entity.ridingEntity.isDead && entity.ridingEntity.riddenByEntity == entity) {
-                    continue;
-                }
-
-                entity.ridingEntity.riddenByEntity = null;
-                entity.ridingEntity = null;
+        Map<Boolean, List<Entity>> liveAndDead = loadedEntitySet.stream().collect(Collectors.groupingBy(e -> e.isDead));
+        CompletableFuture[] completableFutures = liveAndDead.getOrDefault(false, new ArrayList<>()).stream().map(e -> GlobalExecutor.submitTask(() -> {
+            if (e.ridingEntity != null) {
+                e.ridingEntity.riddenByEntity = null;
+                e.ridingEntity = null;
             }
-
-
-            if (!entity.isDead) {
-                try {
-                    updateEntity(entity);
-                } catch (Throwable throwable1) {
-                    CrashReport crashreport = CrashReport.makeCrashReport(throwable1, "Ticking entity");
-                    CrashReportCategory crashreportcategory = crashreport.makeCategory("Entity being ticked");
-                    entity.addEntityCrashInfo(crashreportcategory);
-
-                    if (ForgeModContainer.removeErroringEntities) {
-                        FMLLog.getLogger().log(Level.ERROR, crashreport.getCompleteReport());
-                        removeEntity(entity);
-                    } else {
-                        throw new ReportedException(crashreport);
-                    }
+            try {
+                updateEntity(e);
+            } catch (Throwable throwable1) {
+                CrashReport crashreport = CrashReport.makeCrashReport(throwable1, "Ticking entity");
+                CrashReportCategory crashreportcategory = crashreport.makeCategory("Entity being ticked");
+                e.addEntityCrashInfo(crashreportcategory);
+                FMLLog.getLogger().log(Level.ERROR, crashreport.getCompleteReport());
+                if (ForgeModContainer.removeErroringEntities) {
+                    this.removeEntity(e);
+                } else {
+                    throw new ReportedException(crashreport);
                 }
             }
+            return 0;
+        })).collect(Collectors.toList()).toArray(new CompletableFuture[0]);
+        for (Entity entity : liveAndDead.getOrDefault(true, new ArrayList<>())) {
+            int x = entity.chunkCoordX;
+            int z = entity.chunkCoordZ;
 
-
-            if (entity.isDead) {
-                int x = entity.chunkCoordX;
-                int z = entity.chunkCoordZ;
-
-                if (entity.addedToChunk && this.chunkExists(x, z)) {
-                    this.getChunkFromChunkCoords(x, z).removeEntity(entity);
-                }
-                this.onEntityRemoved(entity);
-                iteratorLoadedEntites.remove();
+            if (entity.addedToChunk && this.chunkExists(x, z)) {
+                this.getChunkFromChunkCoords(x, z).removeEntity(entity);
             }
+            this.onEntityRemoved(entity);
         }
+        CompletableFuture.allOf(completableFutures);
     }
 
     public void tickTileEnitites() {
-        this.processingLoadedTiles = true;
-        Iterator<TileEntity> loadedTileEntitySetIterator = loadedTileEntitySet.iterator();
-        while (loadedTileEntitySetIterator.hasNext()) {
-            TileEntity tileentity = loadedTileEntitySetIterator.next();
-            if (!tileentity.isInvalid() && tileentity.hasWorldObj() && this.blockExists(tileentity.xCoord, tileentity.yCoord, tileentity.zCoord)) {
-                try {
-                    tileentity.updateEntity();
-                } catch (Throwable throwable) {
-                    CrashReport crashreport = CrashReport.makeCrashReport(throwable, "Ticking block entity");
-                    CrashReportCategory crashreportcategory = crashreport.makeCategory("Block entity being ticked");
-                    tileentity.addInfoToCrashReport(crashreportcategory);
-                    if (ForgeModContainer.removeErroringTileEntities) {
-                        FMLLog.getLogger().log(org.apache.logging.log4j.Level.ERROR, crashreport.getCompleteReport());
-                        tileentity.invalidate();
-                        setBlockToAir(tileentity.xCoord, tileentity.yCoord, tileentity.zCoord);
-                    } else {
-                        throw new ReportedException(crashreport);
+        chunkTileEntitiyListMap.forEach((chunkCoord, tileGroup) -> {
+            tileGroup.setProcessingLoadedTiles(true);
+            Iterator<TileEntity> loadedTileEntitySetIterator = tileGroup.getLoadedTiles().iterator();
+            while (loadedTileEntitySetIterator.hasNext()) {
+                TileEntity tileentity = loadedTileEntitySetIterator.next();
+                if (!tileentity.isInvalid() && tileentity.hasWorldObj() && this.blockExists(tileentity.xCoord, tileentity.yCoord, tileentity.zCoord)) {
+                    try {
+                        tileentity.updateEntity();
+                    } catch (Throwable throwable) {
+                        CrashReport crashreport = CrashReport.makeCrashReport(throwable, "Ticking block entity");
+                        CrashReportCategory crashreportcategory = crashreport.makeCategory("Block entity being ticked");
+                        tileentity.addInfoToCrashReport(crashreportcategory);
+                        if (ForgeModContainer.removeErroringTileEntities) {
+                            FMLLog.getLogger().log(org.apache.logging.log4j.Level.ERROR, crashreport.getCompleteReport());
+                            tileentity.invalidate();
+                            setBlockToAir(tileentity.xCoord, tileentity.yCoord, tileentity.zCoord);
+                        } else {
+                            throw new ReportedException(crashreport);
+                        }
+                    }
+                }
+
+                if (tileentity.isInvalid()) {
+                    tileGroup.getRemovingTiles().add(tileentity);
+                    loadedTileEntitySetIterator.remove();
+                    if (this.chunkExists(tileentity.xCoord >> 4, tileentity.zCoord >> 4)) {
+                        Chunk chunk = this.getChunkFromChunkCoords(tileentity.xCoord >> 4, tileentity.zCoord >> 4);
+
+                        if (chunk != null) {
+                            chunk.removeInvalidTileEntity(tileentity.xCoord & 15, tileentity.yCoord, tileentity.zCoord & 15);
+                        }
                     }
                 }
             }
 
-            if (tileentity.isInvalid()) {
-                toBeUnloadedTileEntitySet.add(tileentity);
-                loadedTileEntitySetIterator.remove();
-                if (this.chunkExists(tileentity.xCoord >> 4, tileentity.zCoord >> 4)) {
-                    Chunk chunk = this.getChunkFromChunkCoords(tileentity.xCoord >> 4, tileentity.zCoord >> 4);
-
-                    if (chunk != null) {
-                        chunk.removeInvalidTileEntity(tileentity.xCoord & 15, tileentity.yCoord, tileentity.zCoord & 15);
-                    }
-                }
+            Iterator<TileEntity> iteratorToBeUnloadedTileEntitySet = tileGroup.getRemovingTiles().iterator();
+            while (iteratorToBeUnloadedTileEntitySet.hasNext()) {
+                TileEntity next = iteratorToBeUnloadedTileEntitySet.next();
+                next.onChunkUnload();
+                iteratorToBeUnloadedTileEntitySet.remove();
             }
-        }
+            tileGroup.setProcessingLoadedTiles(false);
+        });
 
-        Iterator<TileEntity> iteratorToBeUnloadedTileEntitySet = toBeUnloadedTileEntitySet.iterator();
-        while (iteratorToBeUnloadedTileEntitySet.hasNext()) {
-            TileEntity next = iteratorToBeUnloadedTileEntitySet.next();
-            next.onChunkUnload();
-            iteratorToBeUnloadedTileEntitySet.remove();
-        }
-
-        this.processingLoadedTiles = false;
     }
 
     private void addNewTileEntities() {
-        Iterator<TileEntity> iterator = addedTileEntitySet.iterator();
-        while (iterator.hasNext()) {
-            TileEntity tile = iterator.next();
-            if (!tile.isInvalid()) {
-                if (!this.loadedTileEntitySet.contains(tile)) {
-                    this.loadedTileEntitySet.add(tile);
-                }
-            } else {
-                if (this.chunkExists(tile.xCoord >> 4, tile.zCoord >> 4)) {
-                    Chunk chunk1 = this.getChunkFromChunkCoords(tile.xCoord >> 4, tile.zCoord >> 4);
+        chunkTileEntitiyListMap.forEach((chunkCoordIntPair, chunkTileGroup) -> {
+            Iterator<TileEntity> iterator = chunkTileGroup.getLoadingTiles().iterator();
+            Set<TileEntity> loadedTiles = chunkTileGroup.getLoadedTiles();
+            while (iterator.hasNext()) {
+                TileEntity tile = iterator.next();
+                if (!tile.isInvalid()) {
+                    if (!loadedTiles.contains(tile)) {
+                        loadedTiles.add(tile);
+                    }
+                } else {
+                    if (this.chunkExists(tile.xCoord >> 4, tile.zCoord >> 4)) {
+                        Chunk chunk1 = this.getChunkFromChunkCoords(tile.xCoord >> 4, tile.zCoord >> 4);
 
-                    if (chunk1 != null) {
-                        chunk1.removeInvalidTileEntity(tile.xCoord & 15, tile.yCoord, tile.zCoord & 15);
+                        if (chunk1 != null) {
+                            chunk1.removeInvalidTileEntity(tile.xCoord & 15, tile.yCoord, tile.zCoord & 15);
+                        }
                     }
                 }
+                iterator.remove();
             }
-            iterator.remove();
-        }
+        });
+
     }
 
     /**
@@ -461,12 +426,18 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
      * @param p_147448_1_
      * @author lyt
      * @reason 带if太恶心，直接换掉
+     * 这个似乎还是会慢点，但是还好，大部分都是其他瓶颈
      */
     @Overwrite
-    public void func_147448_a(Collection p_147448_1_) {
-        Set<TileEntity> dest = processingLoadedTiles ? addedTileEntitySet : loadedTileEntitySet;
-        for (TileEntity entity : (Collection<TileEntity>) p_147448_1_) {
-            if (entity.canUpdate()) dest.add(entity);
+    public void func_147448_a(Collection<TileEntity> p_147448_1_) {
+        for (TileEntity tileEntity : p_147448_1_) {
+            ChunkTileGroup chunkTileGroup = chunkTileEntitiyListMap.get(new ChunkCoordIntPair(tileEntity.xCoord >> 4, tileEntity.zCoord >> 4));
+            if(chunkTileGroup != null) {
+                Set<TileEntity> dest = chunkTileGroup.getProcessingLoadedTiles() ? chunkTileGroup.getLoadingTiles() : chunkTileGroup.getLoadedTiles();
+                if (tileEntity.canUpdate()) {
+                    dest.add(tileEntity);
+                }
+            }
         }
     }
 
@@ -475,77 +446,17 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
      * @reason 带if太恶心，直接换掉
      */
     @Overwrite(remap = false)
-    public void addTileEntity(TileEntity entity) {
-        Set<TileEntity> dest = processingLoadedTiles ? addedTileEntitySet : loadedTileEntitySet;
-        if (entity.canUpdate()) {
-            dest.add(entity);
-        }
-    }
-
-    //    public void setTileEntity(int x, int y, int z, TileEntity tileEntityIn)
-    @Redirect(method = "setTileEntity", at = @At(value = "INVOKE", target = "Ljava/util/List;add(Ljava/lang/Object;)Z", ordinal = 0, remap = false))
-    public <E> boolean _setTileEntity0(List<E> list, E e) {
-        return addedTileEntitySet.add((TileEntity) e);
-    }
-
-    @Redirect(method = "setTileEntity", at = @At(value = "INVOKE", target = "Ljava/util/List;add(Ljava/lang/Object;)Z", ordinal = 1, remap = false))
-    public <E> boolean _setTileEntity1(List<E> list, E e) {
-        return loadedTileEntitySet.add((TileEntity) e);
-    }
-
-    @Redirect(method = "setTileEntity", at = @At(value = "INVOKE", target = "Ljava/util/List;iterator()Ljava/util/Iterator;", remap = false))
-    public <E> Iterator<E> _setTileEntity2(List<E> list) {
-        return (Iterator<E>) addedTileEntitySet.iterator();
-    }
-
-
-    /**
-     * @param x
-     * @param y
-     * @param z
-     * @return
-     * @author lyt
-     * @reason fori 改不来的
-     */
-    @Overwrite
-    public TileEntity getTileEntity(int x, int y, int z) {
-        if (y >= 0 && y < 256) {
-            TileEntity rtn = null;
-            if (this.processingLoadedTiles) {
-                for (TileEntity tileEntity : addedTileEntitySet) {
-                    if (!tileEntity.isInvalid() && tileEntity.xCoord == x && tileEntity.yCoord == y && tileEntity.zCoord == z) {
-                        rtn = tileEntity;
-                        break;
-                    }
-                }
+    public void addTileEntity(TileEntity tileEntity) {
+        ChunkTileGroup chunkTileGroup = chunkTileEntitiyListMap.get(new ChunkCoordIntPair(tileEntity.xCoord >> 4, tileEntity.zCoord >> 4));
+        if(chunkTileGroup != null) {
+            Set<TileEntity> dest = chunkTileGroup.getProcessingLoadedTiles() ? chunkTileGroup.getLoadingTiles() : chunkTileGroup.getLoadedTiles();
+            if (tileEntity.canUpdate()) {
+                dest.add(tileEntity);
             }
-
-            if (rtn == null) {
-                Chunk chunk = this.getChunkFromChunkCoords(x >> 4, z >> 4);
-
-                if (chunk != null) {
-                    rtn = chunk.getBlockTileEntityInChunk(x & 15, y, z & 15);
-                }
-            }
-            for (TileEntity tileEntity : addedTileEntitySet) {
-                if (!tileEntity.isInvalid() && tileEntity.xCoord == x && tileEntity.yCoord == y && tileEntity.zCoord == z) {
-                    rtn = tileEntity;
-                    break;
-                }
-            }
-            return rtn;
-        } else {
-            return null;
         }
     }
 
 
-    //重定向tileEntitiesToBeRemoved
-    //public void markTileEntityForRemoval(TileEntity tileEntityIn)
-    @Redirect(method = "markTileEntityForRemoval", at = @At(value = "INVOKE", target = "Ljava/util/List;add(Ljava/lang/Object;)Z", remap = false))
-    public <E> boolean _markTileEntityForRemoval(List list, E e) {
-        return tileEntitiesToBeRemoved.add(e);
-    }
 
     @Inject(method = "countEntities(Ljava/lang/Class;)I", at = @At("HEAD"), cancellable = true, remap = false)
     public void countEntities1(Class p_72907_1_, CallbackInfoReturnable<Integer> cir) {
@@ -565,5 +476,225 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
             }
         }
         ci.cancel();
+    }
+
+    /**
+     * @author lyt
+     * @reason 局部变量axisAlignedBBS
+     * @param p_72945_1_
+     * @param p_72945_2_
+     * @return
+     */
+    @Overwrite
+    public List getCollidingBoundingBoxes(Entity p_72945_1_, AxisAlignedBB p_72945_2_) {
+        ArrayList<AxisAlignedBB> axisAlignedBBS = new ArrayList<>();
+        int i = MathHelper.floor_double(p_72945_2_.minX);
+        int j = MathHelper.floor_double(p_72945_2_.maxX + 1.0D);
+        int k = MathHelper.floor_double(p_72945_2_.minY);
+        int l = MathHelper.floor_double(p_72945_2_.maxY + 1.0D);
+        int i1 = MathHelper.floor_double(p_72945_2_.minZ);
+        int j1 = MathHelper.floor_double(p_72945_2_.maxZ + 1.0D);
+
+        for (int k1 = i; k1 < j; ++k1)
+        {
+            for (int l1 = i1; l1 < j1; ++l1)
+            {
+                if (this.blockExists(k1, 64, l1))
+                {
+                    for (int i2 = k - 1; i2 < l; ++i2)
+                    {
+                        Block block;
+
+                        if (k1 >= -30000000 && k1 < 30000000 && l1 >= -30000000 && l1 < 30000000)
+                        {
+                            block = getBlock(k1, i2, l1);
+                        }
+                        else
+                        {
+                            block = Blocks.stone;
+                        }
+
+                        block.addCollisionBoxesToList((World)(Object)this, k1, i2, l1, p_72945_2_, axisAlignedBBS, p_72945_1_);
+                    }
+                }
+            }
+        }
+
+        double d0 = 0.25D;
+        List list = getEntitiesWithinAABBExcludingEntity(p_72945_1_, p_72945_2_.expand(d0, d0, d0));
+
+        for (int j2 = 0; j2 < list.size(); ++j2)
+        {
+            AxisAlignedBB axisalignedbb1 = ((Entity)list.get(j2)).getBoundingBox();
+
+            if (axisalignedbb1 != null && axisalignedbb1.intersectsWith(p_72945_2_))
+            {
+                axisAlignedBBS.add(axisalignedbb1);
+            }
+
+            axisalignedbb1 = p_72945_1_.getCollisionBox((Entity)list.get(j2));
+
+            if (axisalignedbb1 != null && axisalignedbb1.intersectsWith(p_72945_2_))
+            {
+                axisAlignedBBS.add(axisalignedbb1);
+            }
+        }
+
+        return axisAlignedBBS;
+    }
+
+    /**
+     * @author lyt
+     * @reason 局部变量
+     * axisAlignedBBS
+     * @param p_147461_1_
+     */
+    @Inject(method = "func_147461_a", at = @At("HEAD"), cancellable = true)
+    public void func_147461_a(AxisAlignedBB p_147461_1_, CallbackInfoReturnable<List> cir)
+    {
+        ArrayList<AxisAlignedBB> axisAlignedBBS = new ArrayList<>();
+        int i = MathHelper.floor_double(p_147461_1_.minX);
+        int j = MathHelper.floor_double(p_147461_1_.maxX + 1.0D);
+        int k = MathHelper.floor_double(p_147461_1_.minY);
+        int l = MathHelper.floor_double(p_147461_1_.maxY + 1.0D);
+        int i1 = MathHelper.floor_double(p_147461_1_.minZ);
+        int j1 = MathHelper.floor_double(p_147461_1_.maxZ + 1.0D);
+
+        for (int k1 = i; k1 < j; ++k1)
+        {
+            for (int l1 = i1; l1 < j1; ++l1)
+            {
+                if (this.blockExists(k1, 64, l1))
+                {
+                    for (int i2 = k - 1; i2 < l; ++i2)
+                    {
+                        Block block;
+
+                        if (k1 >= -30000000 && k1 < 30000000 && l1 >= -30000000 && l1 < 30000000)
+                        {
+                            block = this.getBlock(k1, i2, l1);
+                        }
+                        else
+                        {
+                            block = Blocks.bedrock;
+                        }
+
+                        block.addCollisionBoxesToList((World)(Object)this, k1, i2, l1, p_147461_1_, axisAlignedBBS, (Entity)null);
+                    }
+                }
+            }
+        }
+        cir.setReturnValue(axisAlignedBBS);
+    }
+
+
+    /**
+     * tile其实应该也类似,用一个区块做key的集合比较好，它们都不能动。
+     *
+     */
+    private ConcurrentHashMap<ChunkCoordIntPair, ChunkTileGroup> chunkTileEntitiyListMap = new ConcurrentHashMap<>();
+
+    /**
+     * @param x
+     * @param y
+     * @param z
+     * @author lyt
+     * @reason fori 改不来的
+     */
+    @Inject(method = "getTileEntity", at = @At("HEAD"), cancellable = true)
+    public void getTileEntity(int x, int y, int z, CallbackInfoReturnable<TileEntity> cir) {
+        TileEntity rtn = null;
+        if (y >= 0 && y < 256)
+        {
+            ChunkCoordIntPair coord = new ChunkCoordIntPair(x >> 4, z >> 4);
+            ChunkTileGroup chunkTileGroup = chunkTileEntitiyListMap.get(coord);
+            if(chunkTileGroup != null) {
+                Set<TileEntity> loadedTiles = chunkTileGroup.getLoadedTiles();
+                Set<TileEntity> loadingTiles = chunkTileGroup.getLoadingTiles();
+                if (chunkTileGroup.getProcessingLoadedTiles()) {
+                    for (TileEntity loadingTile : loadingTiles) {
+                        if (!loadingTile.isInvalid() && loadingTile.xCoord == x && loadingTile.yCoord == y && loadingTile.zCoord == z) {
+                            rtn = loadingTile;
+                            break;
+                        }
+                    }
+                }
+                if (rtn == null) {
+                    Chunk chunk = this.getChunkFromChunkCoords(x >> 4, z >> 4);
+
+                    if (chunk != null) {
+                        rtn = chunk.getBlockTileEntityInChunk(x & 15, y, z & 15);
+                    }
+                }
+                if (rtn == null) {
+                    for (TileEntity loadedTile : loadedTiles) {
+                        if (!loadedTile.isInvalid() && loadedTile.xCoord == x && loadedTile.yCoord == y && loadedTile.zCoord == z) {
+                            rtn = loadedTile;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        cir.setReturnValue(rtn);
+    }
+
+    @Inject(method = "setTileEntity", at = @At("HEAD"), cancellable = true, remap = false)
+    public void _setTileEntity(int x, int y, int z, TileEntity tileEntityIn, CallbackInfo ci) {
+        if (tileEntityIn == null || tileEntityIn.isInvalid())
+        {
+            return;
+        }
+        ChunkCoordIntPair chunkCoordIntPair = new ChunkCoordIntPair(x >> 4, z >> 4);
+        ChunkTileGroup chunkTileGroup = chunkTileEntitiyListMap.get(chunkCoordIntPair);
+        if(chunkTileGroup == null) {
+            chunkTileGroup = new ChunkTileGroup();
+            chunkTileEntitiyListMap.put(chunkCoordIntPair, chunkTileGroup);
+        }
+        if (tileEntityIn.canUpdate())
+        {
+            if (chunkTileGroup.getProcessingLoadedTiles())
+            {
+                Set<TileEntity> loadedTiles = chunkTileGroup.getLoadedTiles();
+                if(loadedTiles.contains(tileEntityIn)) {
+                    TileEntity another = null;
+                    for (TileEntity loadedTile : loadedTiles) {
+                        if(loadedTile.equals(tileEntityIn)) {
+                            another = loadedTile;
+                            break;
+                        }
+                    }
+                    //no NPE
+                    another.invalidate();
+                    chunkTileGroup.getLoadingTiles().add(tileEntityIn);
+                }
+            }
+            else
+            {
+                chunkTileGroup.getLoadedTiles().add(tileEntityIn);
+            }
+        }
+        Chunk chunk = getChunkFromChunkCoords(x >> 4, z >> 4);
+        if (chunk != null)
+        {
+            chunk.setBlockTileEntityInChunk(x & 15, y, z & 15, tileEntityIn);
+        }
+        //notify tile changes
+        updateNeighborsAboutBlockChange(x, y, z, getBlock(x, y, z));
+        ci.cancel();
+    }
+
+    //重定向tileEntitiesToBeRemoved
+    //public void markTileEntityForRemoval(TileEntity tileEntityIn)
+    @Redirect(method = "markTileEntityForRemoval", at = @At(value = "INVOKE", target = "Ljava/util/List;add(Ljava/lang/Object;)Z", remap = false))
+    public <E> boolean _markTileEntityForRemoval(List list, E e) {
+        TileEntity tileEntity = (TileEntity) e;
+        ChunkCoordIntPair chunkCoordIntPair = new ChunkCoordIntPair(tileEntity.xCoord >> 4, tileEntity.zCoord >> 4);
+        ChunkTileGroup chunkTileGroup = chunkTileEntitiyListMap.get(chunkCoordIntPair);
+        if(chunkTileGroup != null) {
+            return chunkTileGroup.getRemovingTiles().add((TileEntity) e);
+        } else {
+            return false;
+        }
     }
 }

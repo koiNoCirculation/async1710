@@ -8,13 +8,12 @@ import org.spongepowered.asm.mixin.Overwrite;
 
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.StampedLock;
 
 @Mixin(IntHashMap.class)
 public class MixinIntHashMap {
-    private ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    private StampedLock lock = new StampedLock();
     private Int2ObjectMap map = new Int2ObjectRBTreeMap();
-    private Lock readLock = lock.readLock();
-    private Lock writeLock = lock.writeLock();
 
 
     /**
@@ -24,17 +23,12 @@ public class MixinIntHashMap {
      */
     @Overwrite
     public Object removeObject(int p_76049_1_) {
+        long l = lock.writeLock();
         try {
-            readLock.lock();
-            try {
-                Object remove = map.remove(p_76049_1_);
-                return remove;
-            } finally {
-                readLock.unlock();
-
-            }
-        } catch (Exception e) {
-            throw e;
+            Object remove = map.remove(p_76049_1_);
+            return remove;
+        } finally {
+            lock.unlockWrite(l);
         }
     }
 
@@ -45,15 +39,11 @@ public class MixinIntHashMap {
      */
     @Overwrite
     public void clearMap() {
+        long l = lock.writeLock();
         try {
-            writeLock.lock();
-            try {
-                map.clear();
-            } finally {
-                writeLock.unlock();
-            }
-        } catch (Exception e) {
-            throw e;
+            map.clear();
+        } finally {
+            lock.unlockWrite(l);
         }
     }
 
@@ -64,15 +54,33 @@ public class MixinIntHashMap {
      */
     @Overwrite
     public void addKey(int p_76038_1_, Object p_76038_2_) {
+        long l = lock.writeLock();
         try {
-            writeLock.lock();
+            map.put(p_76038_1_, p_76038_2_);
+        } finally {
+            lock.unlockWrite(l);
+        }
+    }
+
+    /**
+     * @author lyt
+     * @reason sb
+     * @param p_76041_1_
+     * @return
+     */
+    @Overwrite
+    public Object lookup(int p_76041_1_)
+    {
+        long l = lock.tryOptimisticRead();
+        if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
+            long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                map.put(p_76038_1_, p_76038_2_);
+                return map.get(p_76041_1_);
             } finally {
-                writeLock.unlock();
+                lock.unlockRead(lp); // 释放悲观读锁
             }
-        }catch (Exception e) {
-            throw e;
+        } else {
+            return map.get(p_76041_1_);
         }
     }
 }
