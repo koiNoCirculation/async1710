@@ -7,25 +7,22 @@ import java.util.*;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
-import java.util.function.Supplier;
 
-public class ReadWriteLockedList<E> implements List<E> {
-    private final List<E> list;
+/**
+ * 因为你他妈的声明了linkedlist而不是list
+ * @param <E>
+ */
+public class ReadWriteLockedLinkedList<E> extends LinkedList<E> {
 
     private final StampedLock lock = new StampedLock();
-
-    public ReadWriteLockedList(List<E> list) {
-        this.list = list;
-    }
-
     @Override
     public int size() {
         long l = lock.tryOptimisticRead();
-        int size = list.size();
+        int size = super.size();
         if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
             long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                size = list.size();
+                size = super.size();
             } finally {
                 lock.unlockRead(lp); // 释放悲观读锁
             }
@@ -36,11 +33,11 @@ public class ReadWriteLockedList<E> implements List<E> {
     @Override
     public boolean isEmpty() {
         long l = lock.tryOptimisticRead();
-        boolean empty = list.isEmpty();
+        boolean empty = super.isEmpty();
         if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
             long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                empty = list.isEmpty();
+                empty = super.isEmpty();
             } finally {
                 lock.unlockRead(lp); // 释放悲观读锁
             }
@@ -51,11 +48,11 @@ public class ReadWriteLockedList<E> implements List<E> {
     @Override
     public boolean contains(Object o) {
         long l = lock.tryOptimisticRead();
-        boolean contains = list.contains(o);
+        boolean contains = super.contains(o);
         if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
             long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                contains = list.contains(o);
+                contains = super.contains(o);
             } finally {
                 lock.unlockRead(lp); // 释放悲观读锁
             }
@@ -66,11 +63,11 @@ public class ReadWriteLockedList<E> implements List<E> {
     @Override
     public Iterator<E> iterator() {
         long l = lock.tryOptimisticRead();
-        UnmodifiableIterator<E> iterator = ImmutableList.copyOf(list).iterator();
+        UnmodifiableIterator<E> iterator = ImmutableList.copyOf(this).iterator();
         if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
             long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                iterator = ImmutableList.copyOf(list).iterator();
+                iterator = ImmutableList.copyOf(this).iterator();
             } finally {
                 lock.unlockRead(lp); // 释放悲观读锁
             }
@@ -81,11 +78,11 @@ public class ReadWriteLockedList<E> implements List<E> {
     @Override
     public Object[] toArray() {
         long l = lock.tryOptimisticRead();
-        Object[] objects = list.toArray();
+        Object[] objects = super.toArray();
         if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
             long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                objects = list.toArray();
+                objects = super.toArray();
             } finally {
                 lock.unlockRead(lp); // 释放悲观读锁
             }
@@ -96,11 +93,11 @@ public class ReadWriteLockedList<E> implements List<E> {
     @Override
     public <T> T[] toArray(T[] a) {
         long l = lock.tryOptimisticRead();
-        T[] objects = list.toArray(a);
+        T[] objects = super.toArray(a);
         if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
             long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                objects = list.toArray(a);
+                objects = super.toArray(a);
             } finally {
                 lock.unlockRead(lp); // 释放悲观读锁
             }
@@ -112,7 +109,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public boolean add(E e) {
         long l = lock.writeLock();
         try {
-            return list.add(e);
+            return super.add(e);
         } finally {
             lock.unlockWrite(l);
         }
@@ -122,7 +119,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public boolean remove(Object o) {
         long l = lock.writeLock();
         try {
-            return list.remove(o);
+            return super.remove(o);
         } finally {
             lock.unlockWrite(l);
         }
@@ -131,11 +128,11 @@ public class ReadWriteLockedList<E> implements List<E> {
     @Override
     public boolean containsAll(Collection<?> c) {
         long l = lock.tryOptimisticRead();
-        boolean b = list.containsAll(c);
+        boolean b = super.containsAll(c);
         if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
             long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                b = list.containsAll(c);
+                b = super.containsAll(c);
             } finally {
                 lock.unlockRead(lp); // 释放悲观读锁
             }
@@ -147,7 +144,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public boolean addAll(Collection<? extends E> c) {
         long l = lock.writeLock();
         try {
-            return list.addAll(c);
+            return super.addAll(c);
         } finally {
             lock.unlockWrite(l);
         }
@@ -157,7 +154,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public boolean addAll(int index, Collection<? extends E> c) {
         long l = lock.writeLock();
         try {
-            return list.addAll(index, c);
+            return super.addAll(index, c);
         } finally {
             lock.unlockWrite(l);
         }
@@ -167,7 +164,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public boolean removeAll(Collection<?> c) {
         long l = lock.writeLock();
         try {
-            return list.removeAll( c);
+            return super.removeAll( c);
         } finally {
             lock.unlockWrite(l);
         }
@@ -177,7 +174,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public boolean retainAll(Collection<?> c) {
         long l = lock.writeLock();
         try {
-            return list.retainAll(c);
+            return super.retainAll(c);
         } finally {
             lock.unlockWrite(l);
         }
@@ -187,7 +184,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public void clear() {
         long l = lock.writeLock();
         try {
-            list.clear();
+            super.clear();
         } finally {
             lock.unlockWrite(l);
         }
@@ -196,11 +193,11 @@ public class ReadWriteLockedList<E> implements List<E> {
     @Override
     public E get(int index) {
         long l = lock.tryOptimisticRead();
-        E e = list.get(index);
+        E e = super.get(index);
         if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
             long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                e = list.get(index);;
+                e = super.get(index);;
             } finally {
                 lock.unlockRead(lp); // 释放悲观读锁
             }
@@ -212,7 +209,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public E set(int index, E element) {
         long l = lock.writeLock();
         try {
-            return list.set(index, element);
+            return super.set(index, element);
         } finally {
             lock.unlockWrite(l);
         }
@@ -222,7 +219,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public void add(int index, E element) {
         long l = lock.writeLock();
         try {
-            list.add(index, element);
+            super.add(index, element);
         } finally {
             lock.unlockWrite(l);
         }
@@ -232,7 +229,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public E remove(int index) {
         long l = lock.writeLock();
         try {
-            return list.remove(index);
+            return super.remove(index);
         } finally {
             lock.unlockWrite(l);
         }
@@ -242,7 +239,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public int indexOf(Object o) {
         long l = lock.writeLock();
         try {
-            return list.indexOf(o);
+            return super.indexOf(o);
         } finally {
             lock.unlockWrite(l);
         }
@@ -251,11 +248,11 @@ public class ReadWriteLockedList<E> implements List<E> {
     @Override
     public int lastIndexOf(Object o) {
         long l = lock.tryOptimisticRead();
-        int i = list.lastIndexOf(o);
+        int i = super.lastIndexOf(o);
         if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
             long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                i = list.lastIndexOf(o);;
+                i = super.lastIndexOf(o);;
             } finally {
                 lock.unlockRead(lp); // 释放悲观读锁
             }
@@ -266,11 +263,11 @@ public class ReadWriteLockedList<E> implements List<E> {
     @Override
     public ListIterator<E> listIterator() {
         long l = lock.tryOptimisticRead();
-        ListIterator<E> eListIterator = list.listIterator();
+        ListIterator<E> eListIterator = super.listIterator();
         if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
             long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                eListIterator = list.listIterator();
+                eListIterator = super.listIterator();
             } finally {
                 lock.unlockRead(lp); // 释放悲观读锁
             }
@@ -281,11 +278,11 @@ public class ReadWriteLockedList<E> implements List<E> {
     @Override
     public ListIterator<E> listIterator(int index) {
         long l = lock.tryOptimisticRead();
-        ListIterator<E> eListIterator = list.listIterator(index);
+        ListIterator<E> eListIterator = super.listIterator(index);
         if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
             long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                eListIterator = list.listIterator(index);
+                eListIterator = super.listIterator(index);
             } finally {
                 lock.unlockRead(lp); // 释放悲观读锁
             }
@@ -312,7 +309,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public void sort(Comparator<? super E> c) {
         long l = lock.writeLock();
         try {
-            list.sort(c);
+            super.sort(c);
         } finally {
             lock.unlockWrite(l);
         }
@@ -326,7 +323,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public void forEach(Consumer<? super E> action) {
         long l = lock.writeLock();
         try {
-            list.forEach(action);
+            super.forEach(action);
         } finally {
             lock.unlockWrite(l);
         }
@@ -339,7 +336,7 @@ public class ReadWriteLockedList<E> implements List<E> {
     public void foreachWithRemove(Consumer<? super E> action, Predicate<? super E> removeCondition) {
         long l = lock.writeLock();
         try {
-            Iterator<E> iterator = list.iterator();
+            Iterator<E> iterator = super.iterator();
             while (iterator.hasNext()) {
                 E next = iterator.next();
                 action.accept(next);

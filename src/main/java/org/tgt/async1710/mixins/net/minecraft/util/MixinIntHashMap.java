@@ -6,8 +6,6 @@ import net.minecraft.util.IntHashMap;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.StampedLock;
 
 @Mixin(IntHashMap.class)
@@ -72,15 +70,15 @@ public class MixinIntHashMap {
     public Object lookup(int p_76041_1_)
     {
         long l = lock.tryOptimisticRead();
+        Object o = map.get(p_76041_1_);
         if (!lock.validate(l)) { // 检查乐观读锁后是否有其他写锁发生
             long lp = lock.readLock(); // 获取一个悲观读锁
             try {
-                return map.get(p_76041_1_);
+                o = map.get(p_76041_1_);
             } finally {
                 lock.unlockRead(lp); // 释放悲观读锁
             }
-        } else {
-            return map.get(p_76041_1_);
         }
+        return o;
     }
 }

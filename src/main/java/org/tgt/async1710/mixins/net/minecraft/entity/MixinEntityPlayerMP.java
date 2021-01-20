@@ -124,7 +124,6 @@ public abstract class MixinEntityPlayerMP extends EntityPlayer {
 
             this.playerNetServerHandler.sendPacket(new S13PacketDestroyEntities(aint));
         }
-
         if (!this.loadedChunks.isEmpty())
         {
             ArrayList arraylist = new ArrayList();

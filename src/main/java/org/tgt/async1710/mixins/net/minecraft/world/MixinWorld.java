@@ -1,5 +1,6 @@
 package org.tgt.async1710.mixins.net.minecraft.world;
 
+import com.google.common.collect.ImmutableList;
 import cpw.mods.fml.common.FMLLog;
 import io.netty.util.internal.ConcurrentSet;
 import net.minecraft.block.Block;
@@ -31,10 +32,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import org.tgt.async1710.ChunkTileGroup;
-import org.tgt.async1710.GlobalExecutor;
-import org.tgt.async1710.TaskSubmitter;
-import org.tgt.async1710.WorldUtils;
+import org.tgt.async1710.*;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -46,9 +44,6 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
     protected String threadName;
 
     protected LinkedBlockingQueue<FutureTask<?>> tasks = new LinkedBlockingQueue<>();
-
-    protected Logger logger = LogManager.getLogger(MixinWorld.class);
-
 
     @Override
     public void setThreadName(String threadName) {
@@ -81,24 +76,6 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
         }
     }
 
-    @Shadow
-    public abstract void destroyBlockInWorldPartially(int p_147443_1_, int x, int y, int z, int blockDamage);
-
-    @Inject(method = "destroyBlockInWorldPartially", at = @At("HEAD"), cancellable = true)
-    public void _destroyBlockInWorldPartially(int p_147443_1_, int x, int y, int z, int blockDamage, CallbackInfo ci) throws ExecutionException, InterruptedException, TimeoutException {
-        /**
-         * 没问题，我就是扔了两个同样的object
-         */
-        if (Thread.currentThread().getName() != ((WorldUtils) this).getThreadName() && getRunning()) {
-            FutureTask<Integer> ft = new FutureTask<>(() -> {
-                destroyBlockInWorldPartially(p_147443_1_, x, y, z, blockDamage);
-                return 0;
-            });
-            submit(ft);
-            ft.get(1000, TimeUnit.SECONDS);
-            ci.cancel();
-        }
-    }
 
     @Shadow
     public List weatherEffects;
@@ -107,9 +84,9 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
     public abstract void removeEntity(Entity p_72900_1_);
 
 
-    protected ConcurrentSet<Entity> loadedEntitySet = new ConcurrentSet<>();
+    protected Set<Entity> loadedEntitySet = new ReadWriteLockedSet<>(new HashSet<>());
 
-    protected ConcurrentSet<Entity> toBeUnloadedEntitySet = new ConcurrentSet<>();
+    protected Set<Entity> toBeUnloadedEntitySet = new ReadWriteLockedSet<>(new HashSet<>());
 
     @Shadow
     protected abstract boolean chunkExists(int p_72916_1_, int p_72916_2_);
@@ -263,37 +240,38 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
          *             this.theProfiler.endSection();
          *         }
          */
-        Map<Boolean, List<Entity>> liveAndDead = loadedEntitySet.stream().collect(Collectors.groupingBy(e -> e.isDead));
-        CompletableFuture[] completableFutures = liveAndDead.getOrDefault(false, new ArrayList<>()).stream().map(e -> GlobalExecutor.submitTask(() -> {
-            if (e.ridingEntity != null) {
-                e.ridingEntity.riddenByEntity = null;
-                e.ridingEntity = null;
-            }
-            try {
-                updateEntity(e);
-            } catch (Throwable throwable1) {
-                CrashReport crashreport = CrashReport.makeCrashReport(throwable1, "Ticking entity");
-                CrashReportCategory crashreportcategory = crashreport.makeCategory("Entity being ticked");
-                e.addEntityCrashInfo(crashreportcategory);
-                FMLLog.getLogger().log(Level.ERROR, crashreport.getCompleteReport());
-                if (ForgeModContainer.removeErroringEntities) {
-                    this.removeEntity(e);
-                } else {
-                    throw new ReportedException(crashreport);
+        ((ReadWriteLockedSet<Entity>)loadedEntitySet).foreachWithRemove(
+                (e) -> {
+                    if (e.ridingEntity != null) {
+                        e.ridingEntity.riddenByEntity = null;
+                        e.ridingEntity = null;
+                    }
+                    try {
+                        updateEntity(e);
+                    } catch (Throwable throwable1) {
+                        CrashReport crashreport = CrashReport.makeCrashReport(throwable1, "Ticking entity");
+                        CrashReportCategory crashreportcategory = crashreport.makeCategory("Entity being ticked");
+                        e.addEntityCrashInfo(crashreportcategory);
+                        FMLLog.getLogger().log(Level.ERROR, crashreport.getCompleteReport());
+                        if (ForgeModContainer.removeErroringEntities) {
+                            this.removeEntity(e);
+                        } else {
+                            throw new ReportedException(crashreport);
+                        }
+                    }
                 }
-            }
-            return 0;
-        })).collect(Collectors.toList()).toArray(new CompletableFuture[0]);
-        for (Entity entity : liveAndDead.getOrDefault(true, new ArrayList<>())) {
-            int x = entity.chunkCoordX;
-            int z = entity.chunkCoordZ;
+        , (entity) -> {
+                    if(entity.isDead) {
+                        int x = entity.chunkCoordX;
+                        int z = entity.chunkCoordZ;
 
-            if (entity.addedToChunk && this.chunkExists(x, z)) {
-                this.getChunkFromChunkCoords(x, z).removeEntity(entity);
-            }
-            this.onEntityRemoved(entity);
-        }
-        CompletableFuture.allOf(completableFutures);
+                        if (entity.addedToChunk && this.chunkExists(x, z)) {
+                            this.getChunkFromChunkCoords(x, z).removeEntity(entity);
+                        }
+                        this.onEntityRemoved(entity);
+                    }
+                    return entity.isDead;
+                });
     }
 
     public void tickTileEnitites() {
@@ -345,10 +323,9 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
 
     private void addNewTileEntities() {
         chunkTileEntitiyListMap.forEach((chunkCoordIntPair, chunkTileGroup) -> {
-            Iterator<TileEntity> iterator = chunkTileGroup.getLoadingTiles().iterator();
-            Set<TileEntity> loadedTiles = chunkTileGroup.getLoadedTiles();
-            while (iterator.hasNext()) {
-                TileEntity tile = iterator.next();
+            ReadWriteLockedSet<TileEntity> loadingTiles = (ReadWriteLockedSet<TileEntity>) chunkTileGroup.getLoadingTiles();
+            Set<TileEntity> loadedTiles =  chunkTileGroup.getLoadedTiles();
+            loadingTiles.foreachWithRemove((tile) -> {
                 if (!tile.isInvalid()) {
                     if (!loadedTiles.contains(tile)) {
                         loadedTiles.add(tile);
@@ -362,8 +339,7 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
                         }
                     }
                 }
-                iterator.remove();
-            }
+            }, (tile) -> true);
         });
 
     }
