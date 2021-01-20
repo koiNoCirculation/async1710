@@ -62,7 +62,7 @@ public class QueuedChunkWithCallBack implements Supplier<Chunk> {
 
     public CompletableFuture<Chunk> submit() {
         pendings.put(pointer, this);
-        return GlobalExecutor.submitTask(this);
+        return CompletableFuture.supplyAsync(this, GlobalExecutor.stp);
     }
 
     public static void cancel(int x, int z, World world) {

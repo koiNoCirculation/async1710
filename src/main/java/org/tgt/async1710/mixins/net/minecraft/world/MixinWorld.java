@@ -257,7 +257,7 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
          *             this.theProfiler.endSection();
          *         }
          */
-        loadedEntitySet.foreachWithRemove(
+        loadedEntitySet.foreachWithRemoveConcurrent(
                 (e) -> {
                     if (e.ridingEntity != null) {
                         e.ridingEntity.riddenByEntity = null;
@@ -288,13 +288,13 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
                         this.onEntityRemoved(entity);
                     }
                     return entity.isDead;
-                });
+                }, GlobalExecutor.fjp);
     }
 
     public void tickTileEnitites() {
         chunkTileEntitiyListMap.forEach((chunkCoord, tileGroup) -> {
             tileGroup.setProcessingLoadedTiles(true);
-            ReadWriteLockedSet<TileEntity> loadedTiles = (ReadWriteLockedSet<TileEntity>) tileGroup.getLoadedTiles();
+            ReentrantReadWriteLockedSet<TileEntity> loadedTiles = (ReentrantReadWriteLockedSet<TileEntity>) tileGroup.getLoadedTiles();
             loadedTiles.foreachWithRemoveConcurrent(tileentity -> {
                 if (!tileentity.isInvalid() && tileentity.hasWorldObj() && this.blockExists(tileentity.xCoord, tileentity.yCoord, tileentity.zCoord)) {
                     try {
@@ -327,7 +327,7 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
                 return invalid;
             }, GlobalExecutor.fjp);
 
-            ReadWriteLockedSet<TileEntity> removingTiles = (ReadWriteLockedSet<TileEntity>) tileGroup.getRemovingTiles();
+            ReentrantReadWriteLockedSet<TileEntity> removingTiles = (ReentrantReadWriteLockedSet<TileEntity>) tileGroup.getRemovingTiles();
             removingTiles.foreachWithRemoveConcurrent(TileEntity::onChunkUnload, tileEntity -> true, GlobalExecutor.fjp);
             tileGroup.setProcessingLoadedTiles(false);
         });
@@ -336,7 +336,7 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
 
     private void addNewTileEntities() {
         chunkTileEntitiyListMap.forEach((chunkCoordIntPair, chunkTileGroup) -> {
-            ReadWriteLockedSet<TileEntity> loadingTiles = (ReadWriteLockedSet<TileEntity>) chunkTileGroup.getLoadingTiles();
+            ReentrantReadWriteLockedSet<TileEntity> loadingTiles = (ReentrantReadWriteLockedSet<TileEntity>) chunkTileGroup.getLoadingTiles();
             Set<TileEntity> loadedTiles =  chunkTileGroup.getLoadedTiles();
             loadingTiles.foreachWithRemoveConcurrent((tile) -> {
                 if (!tile.isInvalid()) {

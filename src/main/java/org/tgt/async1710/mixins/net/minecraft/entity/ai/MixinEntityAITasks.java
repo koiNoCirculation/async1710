@@ -1,6 +1,5 @@
 package org.tgt.async1710.mixins.net.minecraft.entity.ai;
 
-import io.netty.util.internal.ConcurrentSet;
 import net.minecraft.entity.ai.EntityAIBase;
 import net.minecraft.entity.ai.EntityAITasks;
 import org.spongepowered.asm.mixin.Mixin;
@@ -8,7 +7,6 @@ import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import org.tgt.async1710.ReadWriteLockedSet;
 import org.tgt.async1710.ReentrantReadWriteLockedSet;
 
 import java.util.*;
@@ -37,27 +35,24 @@ public abstract class MixinEntityAITasks {
     @Overwrite
     public void onUpdateTasks()
     {
-        ArrayList arraylist = new ArrayList();
         if (this.tickCount++ % this.tickRate == 0)
         {
             taskEntriesSet.forEach(
                     (entityaitaskentry) -> {
-                        boolean flag = executingTaskEntriesSet.contains(entityaitaskentry);
 
-                        if (flag)
-                        {
-                            if (canUse(entityaitaskentry) && canContinue(entityaitaskentry))
-                            {
-                                return;
+                        if(canUse(entityaitaskentry)) {
+                            if (executingTaskEntriesSet.contains(entityaitaskentry)) {
+                                if (canContinue(entityaitaskentry)) {
+                                    return;
+                                }
+                                entityaitaskentry.action.resetTask();
+                                executingTaskEntriesSet.remove(entityaitaskentry);
                             }
-                            entityaitaskentry.action.resetTask();
-                            executingTaskEntriesSet.remove(entityaitaskentry);
-                        }
 
-                        if (this.canUse(entityaitaskentry) && entityaitaskentry.action.shouldExecute())
-                        {
-                            arraylist.add(entityaitaskentry);
-                            executingTaskEntriesSet.add(entityaitaskentry);
+                            if (entityaitaskentry.action.shouldExecute()) {
+                                entityaitaskentry.action.startExecuting();
+                                executingTaskEntriesSet.add(entityaitaskentry);
+                            }
                         }
                     }
             );
@@ -65,17 +60,13 @@ public abstract class MixinEntityAITasks {
         else
         {
             executingTaskEntriesSet.foreachWithRemove(
-                    entityAITaskEntry -> {}, entityAITaskEntry -> entityAITaskEntry.action.continueExecuting()
+                    entityAITaskEntry -> {}, entityAITaskEntry -> !entityAITaskEntry.action.continueExecuting()
             );
         }
 
-        for (Object o : arraylist) {
-            EntityAITasks.EntityAITaskEntry entityaitaskentry = (EntityAITasks.EntityAITaskEntry)o;
-            entityaitaskentry.action.startExecuting();
-        }
-
-        executingTaskEntriesSet.forEach((entityaitaskentry) -> {
-            entityaitaskentry.action.updateTask();});
+        executingTaskEntriesSet.forEach((entityaitaskentry) ->
+            entityaitaskentry.action.updateTask()
+        );
     }
 
     /**

@@ -7,9 +7,9 @@ import java.util.Set;
 
 public class ChunkTileGroup {
     private boolean processingLoadedTiles = false;
-    private Set<TileEntity> loadedTiles = new ReadWriteLockedSet<>(new HashSet<>());
-    private Set<TileEntity> loadingTiles = new ReadWriteLockedSet<>(new HashSet<>());
-    private Set<TileEntity> removingTiles = new ReadWriteLockedSet<>(new HashSet<>());
+    private Set<TileEntity> loadedTiles = new ReentrantReadWriteLockedSet<>(new HashSet<>());
+    private Set<TileEntity> loadingTiles = new ReentrantReadWriteLockedSet<>(new HashSet<>());
+    private Set<TileEntity> removingTiles = new ReentrantReadWriteLockedSet<>(new HashSet<>());
 
     public Set<TileEntity> getLoadedTiles() {
         return loadedTiles;

@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.tgt.async1710.ReadWriteLockedLinkedList;
+import org.tgt.async1710.ReentrantReadWriteLockedLinkedList;
 
 import java.util.LinkedList;
 import java.util.Random;
@@ -20,7 +20,12 @@ public class MixinStructureStart {
 
     @Inject(method = "<init>()V", at = @At("RETURN"))
     public void init(CallbackInfo ci) {
-        components = new ReadWriteLockedLinkedList<StructureComponent>();
+        components = new ReentrantReadWriteLockedLinkedList<StructureComponent>();
+    }
+
+    @Inject(method = "<init>(II)V", at = @At("RETURN"))
+    public void init1(CallbackInfo ci) {
+        components = new ReentrantReadWriteLockedLinkedList<StructureComponent>();
     }
 
     /**
@@ -32,7 +37,7 @@ public class MixinStructureStart {
     @Overwrite
     public void generateStructure(World p_75068_1_, Random p_75068_2_, StructureBoundingBox p_75068_3_)
     {
-        ((ReadWriteLockedLinkedList<StructureComponent>)components).foreachWithRemove((structurecomponent) ->{},
+        ((ReentrantReadWriteLockedLinkedList<StructureComponent>)components).foreachWithRemove((structurecomponent) ->{},
                 (structurecomponent) -> structurecomponent.getBoundingBox().intersectsWith(p_75068_3_) && !structurecomponent.addComponentParts(p_75068_1_, p_75068_2_, p_75068_3_));
     }
 }

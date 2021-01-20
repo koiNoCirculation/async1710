@@ -24,7 +24,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.tgt.async1710.GlobalExecutor;
-import org.tgt.async1710.ReadWriteLockedList;
+import org.tgt.async1710.ReentrantReadWriteLockedList;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -87,8 +87,8 @@ public abstract class MixinEntityPlayerMP extends EntityPlayer {
 
     @Inject(method = "<init>", at = @At("RETURN"))
     public void init(MinecraftServer p_i45285_1_, WorldServer p_i45285_2_, GameProfile p_i45285_3_, ItemInWorldManager p_i45285_4_, CallbackInfo ci) {
-        loadedChunks = new ReadWriteLockedList(new LinkedList());
-        destroyedItemsNetCache = new ReadWriteLockedList<Integer>(new LinkedList<>());
+        loadedChunks = new ReentrantReadWriteLockedList<>(new LinkedList());
+        destroyedItemsNetCache = new ReentrantReadWriteLockedList<Integer>(new LinkedList<>());
     }
 
 
@@ -111,7 +111,7 @@ public abstract class MixinEntityPlayerMP extends EntityPlayer {
             this.openContainer = this.inventoryContainer;
         }
 
-        ((ReadWriteLockedList<Integer>)destroyedItemsNetCache).foreachWithRemoveConcurrent(Int ->
+        ((ReentrantReadWriteLockedList<Integer>)destroyedItemsNetCache).foreachWithRemoveConcurrent(Int ->
             playerNetServerHandler.sendPacket(new S13PacketDestroyEntities(Int))
         , (Int) ->
             true
@@ -121,7 +121,7 @@ public abstract class MixinEntityPlayerMP extends EntityPlayer {
             ArrayList<Chunk> chunksToSend = new ArrayList<>();
             ArrayList<TileEntity> chunkContainedTiles = new ArrayList<>();
 
-            ((ReadWriteLockedList<ChunkCoordIntPair>)loadedChunks).foreachWithRemove((chunkcoordintpair) -> {
+            ((ReentrantReadWriteLockedList<ChunkCoordIntPair>)loadedChunks).foreachWithRemove((chunkcoordintpair) -> {
                 if (chunkcoordintpair != null)
                 {
                     if (this.worldObj.blockExists(chunkcoordintpair.chunkXPos << 4, 0, chunkcoordintpair.chunkZPos << 4))
@@ -155,7 +155,7 @@ public abstract class MixinEntityPlayerMP extends EntityPlayer {
             });
             List<ChunkCoordIntPair> toRemoves = new ArrayList<>();
 
-            ((ReadWriteLockedList<ChunkCoordIntPair>)loadedChunks).foreachWithBreak(chunkcoordintpair -> {
+            ((ReentrantReadWriteLockedList<ChunkCoordIntPair>)loadedChunks).foreachWithBreak(chunkcoordintpair -> {
                 if(chunkcoordintpair != null) {
                     if (this.worldObj.blockExists(chunkcoordintpair.chunkXPos << 4, 0, chunkcoordintpair.chunkZPos << 4))
                     {
