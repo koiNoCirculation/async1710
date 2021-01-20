@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.tgt.async1710.ReadWriteLockedSet;
+import org.tgt.async1710.ReentrantReadWriteLockedSet;
 
 import java.util.*;
 
@@ -21,9 +22,9 @@ public abstract class MixinEntityAITasks {
 
     @Shadow protected abstract boolean areTasksCompatible(EntityAITasks.EntityAITaskEntry p_75777_1_, EntityAITasks.EntityAITaskEntry p_75777_2_);
 
-    public ReadWriteLockedSet<EntityAITasks.EntityAITaskEntry> taskEntriesSet = new ReadWriteLockedSet<>(new HashSet<>());
+    public ReentrantReadWriteLockedSet<EntityAITasks.EntityAITaskEntry> taskEntriesSet = new ReentrantReadWriteLockedSet<>(new HashSet<>());
     /** A list of EntityAITaskEntrys that are currently being executed. */
-    private ReadWriteLockedSet<EntityAITasks.EntityAITaskEntry> executingTaskEntriesSet = new ReadWriteLockedSet<>(new HashSet<>());
+    private ReentrantReadWriteLockedSet<EntityAITasks.EntityAITaskEntry> executingTaskEntriesSet = new ReentrantReadWriteLockedSet<>(new HashSet<>());
 
     @Redirect(method = "addTask", at = @At(value = "INVOKE", target = "Ljava/util/List;add(Ljava/lang/Object;)Z", remap = false))
     public <E> boolean taskEntries_addTask(List<E> list, E e) {

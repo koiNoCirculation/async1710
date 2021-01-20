@@ -3,9 +3,13 @@ package org.tgt.async1710.mixins.net.minecraftforge.common;
 import com.google.common.collect.Multiset;
 import cpw.mods.fml.common.eventhandler.Event;
 import cpw.mods.fml.common.eventhandler.EventBus;
-import net.minecraft.world.WorldProvider;
-import net.minecraft.world.WorldServer;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.*;
+import net.minecraft.world.storage.ISaveHandler;
+import net.minecraft.world.storage.WorldInfo;
 import net.minecraftforge.common.DimensionManager;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.world.WorldEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.spongepowered.asm.mixin.Mixin;
@@ -16,6 +20,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
+import org.tgt.async1710.WorldInfoGetter;
 import org.tgt.async1710.WorldUtils;
 
 import java.util.*;
@@ -71,7 +76,6 @@ public abstract class MixinDimensionManager {
     @Shadow
     private static Hashtable<Integer, WorldServer> worlds;
 
-
     private static Logger mixinLogger = LogManager.getLogger(MixinDimensionManager.class);
     @Inject(method = "setWorld", remap = false, locals = LocalCapture.CAPTURE_FAILEXCEPTION, at = @At(value = "INVOKE", shift = At.Shift.AFTER, ordinal = 0, target = "Ljava/util/Hashtable;put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", remap = false))
     private static void startWorld(int id, WorldServer world, CallbackInfo ci) {
@@ -116,15 +120,47 @@ public abstract class MixinDimensionManager {
         }
     }
 
-    @Redirect(method = "initDimension",
-            remap = false,
-            at = @At(value = "INVOKE",
-            target = "Lcpw/mods/fml/common/eventhandler/EventBus;post(Lcpw/mods/fml/common/eventhandler/Event;)Z",
-            remap = false))
-    private static boolean cancelInitDimensionPostEvent(EventBus eventBus, Event event) {
-        mixinLogger.info("Post of world load event is canceled, the event will occur in world thread");
-        return true;
-    }
+    /**
+     * @author
+     */
+    @Overwrite
+    public static void initDimension(int dim) {
+        WorldServer overworld = DimensionManager.getWorld(0);
+        WorldServer newWorld;
+        MinecraftServer server = MinecraftServer.getServer();
+        if (overworld == null)
+        {
+            /**
+             * recreate overworld on crash
+             */
+            WorldInfo worldInfo = ((WorldInfoGetter) server).getWorldInfo();
+            ISaveHandler saveHandler = ((WorldInfoGetter) server).getSaveHandler();
+            WorldSettings worldsettings = new WorldSettings(worldInfo);
+            newWorld = new WorldServer(server, saveHandler, worldInfo.getWorldName(), 0, worldsettings, server.theProfiler);
+        } else {
+            try
+            {
+                DimensionManager.getProviderType(dim);
+            }
+            catch (Exception e)
+            {
+                System.err.println("Cannot Hotload Dim: " + e.getMessage());
+                return; // If a provider hasn't been registered then we can't hotload the dim
+            }
+            MinecraftServer mcServer = overworld.func_73046_m();
+            ISaveHandler savehandler = overworld.getSaveHandler();
+            WorldSettings worldSettings = new WorldSettings(overworld.getWorldInfo());
+            newWorld = new WorldServerMulti(mcServer, savehandler, overworld.getWorldInfo().getWorldName(), dim, worldSettings, overworld, mcServer.theProfiler);
+        }
 
+
+        newWorld.addWorldAccess(new WorldManager(server, newWorld));
+        if (!server.isSinglePlayer())
+        {
+            newWorld.getWorldInfo().setGameType(server.getGameType());
+        }
+
+        server.setDifficultyForAllWorlds(server.getDifficulty());
+    }
 }
 

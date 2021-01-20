@@ -4,9 +4,13 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.UnmodifiableIterator;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 public class ReadWriteLockedSet<E> implements Set<E> {
     private final Set<E> set;
@@ -200,6 +204,19 @@ public class ReadWriteLockedSet<E> implements Set<E> {
      * 遍历操作全部加写锁，保证一致性
      * @param action
      */
+    public void forEachConcurrent(Consumer<? super E> action, ExecutorService executor) {
+        long l = lock.writeLock();
+        try {
+            CompletableFuture.allOf(set.stream().map(e -> CompletableFuture.runAsync(() -> action.accept(e), executor)).toArray(CompletableFuture[]::new));
+        } finally {
+            lock.unlockWrite(l);
+        }
+    }
+
+    /**
+     * 遍历操作全部加写锁，保证一致性
+     * @param action
+     */
     public void foreachWithRemove(Consumer<? super E> action, Predicate<? super E> removeCondition) {
         long l = lock.writeLock();
         try {
@@ -211,6 +228,22 @@ public class ReadWriteLockedSet<E> implements Set<E> {
                     iterator.remove();
                 }
             }
+        } finally {
+            lock.unlockWrite(l);
+        }
+    }
+
+    public void foreachWithRemoveConcurrent(Consumer<? super E> action, Predicate<? super E> removeCondition, Executor executor) {
+        long l = lock.writeLock();
+        try {
+            List<E> removes = new ArrayList<>();
+            CompletableFuture.allOf(set.stream().map(e -> CompletableFuture.runAsync(() -> {
+                action.accept(e);
+                if (removeCondition.test(e)) {
+                    removes.add(e);
+                }
+            }, executor)).toArray(CompletableFuture[]::new));
+           set.removeAll(removes);
         } finally {
             lock.unlockWrite(l);
         }

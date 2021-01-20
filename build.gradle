@@ -64,6 +64,12 @@ dependencies {
     // https://mvnrepository.com/artifact/it.unimi.dsi/fastutil
     compile group: 'it.unimi.dsi', name: 'fastutil', version: '8.4.4'
 
+    // https://mvnrepository.com/artifact/io.micrometer/micrometer-core
+    compile group: 'io.micrometer', name: 'micrometer-core', version: '1.6.3'
+
+    compile 'io.micrometer:micrometer-registry-prometheus:latest.release'
+
+
 }
 
 jar {

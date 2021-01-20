@@ -2,6 +2,7 @@ package org.tgt.async1710.mixins.net.minecraft.world;
 
 import com.google.common.collect.Lists;
 import cpw.mods.fml.common.FMLCommonHandler;
+import io.micrometer.core.instrument.Timer;
 import io.netty.util.internal.ConcurrentSet;
 import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
@@ -33,6 +34,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.tgt.async1710.MonitorRegistry;
 import org.tgt.async1710.TaskSubmitter;
 
 import java.lang.reflect.Constructor;
@@ -71,6 +73,15 @@ public abstract class MixinWorldServer extends World implements Runnable {
     @Shadow
     public abstract void saveAllChunks(boolean p_73044_1_, IProgressUpdate p_73044_2_) throws MinecraftException;
 
+    private Timer blockTickTimer;
+
+    private Timer saveChunksTimer;
+
+    private Timer trackEntityTimer;
+
+    private Timer tickTimer;
+
+
     /**
      * block tick用一个区块做key的集合比较好，这样可以按照区块去tick block，保证chunk的unload发生在tick的最后。
      */
@@ -106,16 +117,20 @@ public abstract class MixinWorldServer extends World implements Runnable {
             addWorldInfoToCrashReport(crashreport1);
             throw new ReportedException(crashreport1);
         }
-        theEntityTracker.updateTrackedEntities();
+        trackEntityTimer.record(() -> {
+            theEntityTracker.updateTrackedEntities();
+        });
 
         FMLCommonHandler.instance().instance().onPostWorldTick((WorldServer)(Object)this);
         this.chunkProvider.unloadQueuedChunks();
         if (this.tickCounter % 900 == 0) {
-            try {
-                this.saveAllChunks(true, null);
-            } catch (MinecraftException e) {
-                mixinLogger.error("error saving world!", e);
-            }
+            saveChunksTimer.record(() -> {
+                try {
+                    this.saveAllChunks(true, null);
+                } catch (MinecraftException e) {
+                    mixinLogger.error("error saving world!", e);
+                }
+            });
         }
         ((TaskSubmitter)this).runTasks();
         /**
@@ -143,6 +158,10 @@ public abstract class MixinWorldServer extends World implements Runnable {
 
     @Override
     public void run() {
+        blockTickTimer = MonitorRegistry.getInstance().timer("blocks", "thread",Thread.currentThread().getName());
+        saveChunksTimer = MonitorRegistry.getInstance().timer("saveChunks", "thread", Thread.currentThread().getName());
+        trackEntityTimer = MonitorRegistry.getInstance().timer("trackEntities", "thread", Thread.currentThread().getName());
+        tickTimer = MonitorRegistry.getInstance().timer("worldServerTick", "thread", Thread.currentThread().getName());
         try {
             initialChunkLoad();
             running = true;
@@ -150,7 +169,9 @@ public abstract class MixinWorldServer extends World implements Runnable {
             while (running) {
                 long timeMillis = System.currentTimeMillis();
                 ++tickCounter;
-                allTick();
+                tickTimer.record(() -> {
+                    allTick();
+                });
                 long now = System.currentTimeMillis();
                 long elapsed = now - timeMillis;
                 long remains = 50 - elapsed;
@@ -315,8 +336,10 @@ public abstract class MixinWorldServer extends World implements Runnable {
      */
     @Inject(method = "tickUpdates", at = @At("HEAD"), cancellable = true)
     public void tickUpdates(boolean p_72955_1_, CallbackInfoReturnable<Boolean> cir) {
-        chunkTickListMap.forEach(this::tickAChunk);
-        cir.setReturnValue(true);
+        blockTickTimer.record(() -> {
+            chunkTickListMap.forEach(this::tickAChunk);
+            cir.setReturnValue(true);
+        });
     }
 
     /**

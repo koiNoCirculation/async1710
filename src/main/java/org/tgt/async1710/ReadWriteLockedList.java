@@ -4,6 +4,9 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.UnmodifiableIterator;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -336,6 +339,19 @@ public class ReadWriteLockedList<E> implements List<E> {
      * 遍历操作全部加写锁，保证一致性
      * @param action
      */
+    public void forEachConcurrent(Consumer<? super E> action, ExecutorService executor) {
+        long l = lock.writeLock();
+        try {
+            CompletableFuture.allOf(list.stream().map(e -> CompletableFuture.runAsync(() -> action.accept(e), executor)).toArray(CompletableFuture[]::new));
+        } finally {
+            lock.unlockWrite(l);
+        }
+    }
+
+    /**
+     * 遍历操作全部加写锁，保证一致性
+     * @param action
+     */
     public void foreachWithRemove(Consumer<? super E> action, Predicate<? super E> removeCondition) {
         long l = lock.writeLock();
         try {
@@ -345,6 +361,38 @@ public class ReadWriteLockedList<E> implements List<E> {
                 action.accept(next);
                 if(removeCondition.test(next)) {
                     iterator.remove();
+                }
+            }
+        } finally {
+            lock.unlockWrite(l);
+        }
+    }
+    public void foreachWithRemoveConcurrent(Consumer<? super E> action, Predicate<? super E> removeCondition, Executor executor) {
+        long l = lock.writeLock();
+        try {
+            List<E> removes = new ArrayList<>();
+            CompletableFuture.allOf(list.stream().map(e -> CompletableFuture.runAsync(() -> {
+                action.accept(e);
+                if (removeCondition.test(e)) {
+                    removes.add(e);
+                }
+            }, executor)).toArray(CompletableFuture[]::new));
+            list.removeAll(removes);
+        } finally {
+            lock.unlockWrite(l);
+        }
+    }
+    /**
+     * 遍历操作全部加写锁，保证一致性
+     */
+    public void foreachWithBreak(Predicate<? super E> breakCondition) {
+        long l = lock.writeLock();
+        try {
+            Iterator<E> iterator = list.iterator();
+            while (iterator.hasNext()) {
+                E next = iterator.next();
+                if(breakCondition.test(next)) {
+                    return;
                 }
             }
         } finally {
