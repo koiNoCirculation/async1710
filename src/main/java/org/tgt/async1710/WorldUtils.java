@@ -12,5 +12,4 @@ public interface WorldUtils {
     void stop();
     boolean getRunning();
     boolean getExit();
-    Map<ChunkCoordIntPair, Queue<NextTickListEntry>> getPendingTicks();
 }

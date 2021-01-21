@@ -1,7 +1,6 @@
 package org.tgt.async1710.mixins.net.minecraft.tileentity;
 
 import net.minecraft.tileentity.TileEntity;
-import net.minecraft.world.World;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 

@@ -7,20 +7,14 @@
   "client": ["netty.MixinReadTimeoutHandler"],
   "server": [
     "net.minecraftforge.common.MixinDimensionManager",
-    "net.minecraftforge.common.MixinForgeChunkManager",
     "net.minecraft.server.MixinMinecraftServer",
     "net.minecraft.world.MixinWorldServer",
     "net.minecraft.world.MixinWorld",
-    "net.minecraft.world.chunk.storage.MixinAnvilChunkloader",
-    "net.minecraft.world.biome.MixinBiomeDecorator",
     "net.minecraft.world.chunk.MixinChunk",
     "net.minecraft.world.chunk.MixinChunkProviderServer",
     "net.minecraft.world.gen.layer.MixinIntCache",
-    "net.minecraft.network.MixinNetHandlerPlayServer",
     "net.minecraft.server.management.MixinPlayerManager",
-    "net.minecraft.entity.MixinEntityTracker",
     "net.minecraft.entity.MixinEntity",
-    "net.minecraft.entity.MixinEntityPlayerMP",
     "net.minecraft.tileentity.MixinTileEntity"
   ],
   "compatibilityLevel": "JAVA_8"

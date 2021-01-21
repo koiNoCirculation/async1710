@@ -1,15 +1,13 @@
 package org.tgt.async1710.mixins.net.minecraftforge.common;
 
-import com.google.common.collect.Multiset;
-import cpw.mods.fml.common.eventhandler.Event;
-import cpw.mods.fml.common.eventhandler.EventBus;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.*;
+import net.minecraft.world.WorldManager;
+import net.minecraft.world.WorldServer;
+import net.minecraft.world.WorldServerMulti;
+import net.minecraft.world.WorldSettings;
 import net.minecraft.world.storage.ISaveHandler;
 import net.minecraft.world.storage.WorldInfo;
 import net.minecraftforge.common.DimensionManager;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.world.WorldEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.spongepowered.asm.mixin.Mixin;
@@ -17,13 +15,14 @@ import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
 import org.tgt.async1710.WorldInfoGetter;
 import org.tgt.async1710.WorldUtils;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Hashtable;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -76,7 +75,6 @@ public abstract class MixinDimensionManager {
     @Shadow
     private static Hashtable<Integer, WorldServer> worlds;
 
-    private static Logger mixinLogger = LogManager.getLogger(MixinDimensionManager.class);
     @Inject(method = "setWorld", remap = false, locals = LocalCapture.CAPTURE_FAILEXCEPTION, at = @At(value = "INVOKE", shift = At.Shift.AFTER, ordinal = 0, target = "Ljava/util/Hashtable;put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", remap = false))
     private static void startWorld(int id, WorldServer world, CallbackInfo ci) {
         Thread thread = new Thread((Runnable)world);

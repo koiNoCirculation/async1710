@@ -4,7 +4,6 @@ import com.mojang.authlib.GameProfile;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.Event;
 import cpw.mods.fml.common.eventhandler.EventBus;
-import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.network.NetworkSystem;
@@ -31,7 +30,6 @@ import org.tgt.async1710.WorldInfoGetter;
 
 import java.io.File;
 import java.net.Proxy;
-import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.List;
 
