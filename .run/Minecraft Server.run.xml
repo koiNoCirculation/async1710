@@ -3,7 +3,7 @@
     <option name="MAIN_CLASS_NAME" value="GradleStartServer" />
     <module name="async1710.main" />
     <option name="PROGRAM_PARAMETERS" value="--tweakClass org.spongepowered.asm.launch.MixinTweaker --mixin mixins.async1710.json" />
-    <option name="VM_PARAMETERS" value="-XX:+UseG1GC -Dfml.ignoreInvalidMinecraftCertificates=true  -Xmx4g " />
+    <option name="VM_PARAMETERS" value="-XX:+UseG1GC -Dfml.ignoreInvalidMinecraftCertificates=true  -Xmx2g " />
     <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/run" />
     <RunnerSettings RunnerId="Run" />
     <ConfigurationWrapper RunnerId="Run" />

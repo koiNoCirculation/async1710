@@ -3,10 +3,13 @@ package org.tgt.async1710.mixins.net.minecraft.world.chunk.storage;
 import cpw.mods.fml.common.FMLLog;
 import io.netty.util.internal.ConcurrentSet;
 import net.minecraft.block.Block;
+import net.minecraft.block.material.Material;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityList;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.world.ChunkCoordIntPair;
 import net.minecraft.world.NextTickListEntry;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
@@ -14,15 +17,20 @@ import net.minecraft.world.chunk.storage.AnvilChunkLoader;
 import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
 import org.apache.logging.log4j.Level;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.tgt.async1710.ChunkGetLoadedEntities;
+import org.tgt.async1710.WorldUtils;
 
 import java.io.File;
 import java.util.List;
+import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 @Mixin(AnvilChunkLoader.class)
@@ -128,14 +136,15 @@ public class MixinAnvilChunkloader {
             }
         }
         p_75820_3_.setTag("TileEntities", nbttaglist3);
-
-        List list = p_75820_2_.getPendingBlockUpdates(p_75820_1_, false);
-
-        if (list != null)
+        ChunkCoordIntPair chunkCoordIntPair = new ChunkCoordIntPair(p_75820_1_.xPosition, p_75820_1_.zPosition);
+        Map<ChunkCoordIntPair, Queue<NextTickListEntry>> pendingTicks = ((WorldUtils) p_75820_2_).getPendingTicks();
+        Queue<NextTickListEntry> nextTickListEntries = pendingTicks.get(chunkCoordIntPair);
+        pendingTicks.remove(chunkCoordIntPair);
+        if (nextTickListEntries != null)
         {
             long k = p_75820_2_.getTotalWorldTime();
             NBTTagList nbttaglist1 = new NBTTagList();
-            for (Object o : list) {
+            for (Object o : nextTickListEntries) {
                 NextTickListEntry nextticklistentry = (NextTickListEntry)o;
                 NBTTagCompound nbttagcompound2 = new NBTTagCompound();
                 nbttagcompound2.setInteger("i", Block.getIdFromBlock(nextticklistentry.func_151351_a()));
@@ -149,5 +158,92 @@ public class MixinAnvilChunkloader {
             p_75820_3_.setTag("TileTicks", nbttaglist1);
         }
         ci.cancel();
+    }
+
+    /**
+     * @author
+     */
+    @Overwrite(remap = false)
+    public void loadEntities(World p_75823_1_, NBTTagCompound p_75823_2_, Chunk chunk)
+    {
+        NBTTagList nbttaglist1 = p_75823_2_.getTagList("Entities", 10);
+
+        if (nbttaglist1 != null)
+        {
+            for (int l = 0; l < nbttaglist1.tagCount(); ++l)
+            {
+                NBTTagCompound nbttagcompound3 = nbttaglist1.getCompoundTagAt(l);
+                Entity entity2 = EntityList.createEntityFromNBT(nbttagcompound3, p_75823_1_);
+                chunk.hasEntities = true;
+
+                if (entity2 != null)
+                {
+                    chunk.addEntity(entity2);
+                    Entity entity = entity2;
+
+                    for (NBTTagCompound nbttagcompound2 = nbttagcompound3; nbttagcompound2.hasKey("Riding", 10); nbttagcompound2 = nbttagcompound2.getCompoundTag("Riding"))
+                    {
+                        Entity entity1 = EntityList.createEntityFromNBT(nbttagcompound2.getCompoundTag("Riding"), p_75823_1_);
+
+                        if (entity1 != null)
+                        {
+                            chunk.addEntity(entity1);
+                            entity.mountEntity(entity1);
+                        }
+
+                        entity = entity1;
+                    }
+                }
+            }
+        }
+
+        NBTTagList nbttaglist2 = p_75823_2_.getTagList("TileEntities", 10);
+
+        if (nbttaglist2 != null)
+        {
+            for (int i1 = 0; i1 < nbttaglist2.tagCount(); ++i1)
+            {
+                NBTTagCompound nbttagcompound4 = nbttaglist2.getCompoundTagAt(i1);
+                TileEntity tileentity = TileEntity.createAndLoadEntity(nbttagcompound4);
+
+                if (tileentity != null)
+                {
+                    chunk.addTileEntity(tileentity);
+                }
+            }
+        }
+
+        ChunkCoordIntPair chunkCoordIntPair = new ChunkCoordIntPair(chunk.xPosition, chunk.zPosition);
+        ConcurrentLinkedQueue<NextTickListEntry> nextTickQueue = new ConcurrentLinkedQueue<>();
+        if (p_75823_2_.hasKey("TileTicks", 9))
+        {
+
+            NBTTagList nbttaglist3 = p_75823_2_.getTagList("TileTicks", 10);
+
+            if (nbttaglist3 != null)
+            {
+                for (int j1 = 0; j1 < nbttaglist3.tagCount(); ++j1)
+                {
+                    //原有的worldserver.func_147446_b
+                    NBTTagCompound nbttagcompound5 = nbttaglist3.getCompoundTagAt(j1);
+                    int x = nbttagcompound5.getInteger("x");
+                    int y = nbttagcompound5.getInteger("y");
+                    int z = nbttagcompound5.getInteger("z");
+                    Block blockid = Block.getBlockById(nbttagcompound5.getInteger("i"));
+                    int time = nbttagcompound5.getInteger("t");
+                    int priority = nbttagcompound5.getInteger("p");
+                    NextTickListEntry nextticklistentry = new NextTickListEntry(x, y, z, blockid);
+                    nextticklistentry.setPriority(priority);
+                    if (blockid.getMaterial() != Material.air)
+                    {
+                        nextticklistentry.setScheduledTime((long)time + p_75823_1_.getTotalWorldTime());
+                    }
+                    nextTickQueue.offer(nextticklistentry);
+                }
+            }
+
+        }
+        ((WorldUtils)p_75823_1_).getPendingTicks().put(chunkCoordIntPair, nextTickQueue);
+        // return chunk;
     }
 }

@@ -37,10 +37,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.tgt.async1710.MonitorRegistry;
 import org.tgt.async1710.TaskSubmitter;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 @Mixin(WorldServer.class)
@@ -92,15 +93,14 @@ public abstract class MixinWorldServer extends World implements Runnable {
     public void allTick() {
         long i = System.nanoTime();
         if (tickCounter % 20 == 0) {
-            ((DedicatedServer)mcServer).getConfigurationManager().
+            ((DedicatedServer) mcServer).getConfigurationManager().
                     sendPacketToAllPlayersInDimension(
                             new S03PacketTimeUpdate(getTotalWorldTime(),
                                     getWorldTime(),
                                     getGameRules().getGameRuleBooleanValue("doDaylightCycle")),
                             provider.dimensionId);
         }
-        FMLCommonHandler.instance().onPreWorldTick((WorldServer)(Object)this);
-
+        FMLCommonHandler.instance().onPreWorldTick((WorldServer) (Object) this);
 
         try {
             tick();
@@ -110,6 +110,7 @@ public abstract class MixinWorldServer extends World implements Runnable {
             throw new ReportedException(crashreport);
         }
 
+        long timeMillis = System.currentTimeMillis();
         try {
             updateEntities();
         } catch (Throwable throwable) {
@@ -117,11 +118,19 @@ public abstract class MixinWorldServer extends World implements Runnable {
             addWorldInfoToCrashReport(crashreport1);
             throw new ReportedException(crashreport1);
         }
+        if (provider.dimensionId == 0) {
+            long l = System.currentTimeMillis() - timeMillis;
+            if (l > 300) {
+                mixinLogger.info("world entity tick time = {}", l);
+            }
+        }
+
+
         trackEntityTimer.record(() -> {
             theEntityTracker.updateTrackedEntities();
         });
 
-        FMLCommonHandler.instance().instance().onPostWorldTick((WorldServer)(Object)this);
+        FMLCommonHandler.instance().instance().onPostWorldTick((WorldServer) (Object) this);
         this.chunkProvider.unloadQueuedChunks();
         if (this.tickCounter % 900 == 0) {
             saveChunksTimer.record(() -> {
@@ -132,12 +141,12 @@ public abstract class MixinWorldServer extends World implements Runnable {
                 }
             });
         }
-        ((TaskSubmitter)this).runTasks();
+        ((TaskSubmitter) this).runTasks();
         /**
          * for unload
          */
         long[] longs = mcServer.worldTickTimes.get(provider.dimensionId);
-        if(longs != null) {
+        if (longs != null) {
             longs[this.tickCounter % 100] = System.nanoTime() - i;
         }
     }
@@ -145,20 +154,17 @@ public abstract class MixinWorldServer extends World implements Runnable {
     private void initialChunkLoad() {
         ChunkCoordinates chunkcoordinates = getSpawnPoint();
         mixinLogger.info("Preparing start region for level " + provider.dimensionId);
-        for (int k = -192; k <= 192; k += 16)
-        {
-            for (int l = -192; l <= 192; l += 16)
-            {
+        for (int k = -192; k <= 192; k += 16) {
+            for (int l = -192; l <= 192; l += 16) {
                 chunkProvider.loadChunk(chunkcoordinates.posX + k >> 4, chunkcoordinates.posZ + l >> 4);
             }
         }
     }
 
 
-
     @Override
     public void run() {
-        blockTickTimer = MonitorRegistry.getInstance().timer("blocks", "thread",Thread.currentThread().getName());
+        blockTickTimer = MonitorRegistry.getInstance().timer("blocks", "thread", Thread.currentThread().getName());
         saveChunksTimer = MonitorRegistry.getInstance().timer("saveChunks", "thread", Thread.currentThread().getName());
         trackEntityTimer = MonitorRegistry.getInstance().timer("trackEntities", "thread", Thread.currentThread().getName());
         tickTimer = MonitorRegistry.getInstance().timer("worldServerTick", "thread", Thread.currentThread().getName());
@@ -167,35 +173,34 @@ public abstract class MixinWorldServer extends World implements Runnable {
             running = true;
             MinecraftForge.EVENT_BUS.post(new WorldEvent.Load(this));
             while (running) {
-                long timeMillis = System.currentTimeMillis();
-                ++tickCounter;
                 tickTimer.record(() -> {
+                    long timeMillis = System.currentTimeMillis();
+                    ++tickCounter;
                     allTick();
-                });
-                long now = System.currentTimeMillis();
-                long elapsed = now - timeMillis;
-                long remains = 50 - elapsed;
-                if(remains > 0) {
-                    Thread.sleep(remains);
-                } else {
-                    if(now - lastWarn > 15000 && elapsed > 2000) {
-                        mixinLogger.warn("Can't keep up! Did the system time change, or is the server overloaded? Running {}ms behind, skipping {} tick(s)", elapsed, elapsed / 50L);
-                        lastWarn = now;
+                    long now = System.currentTimeMillis();
+                    long elapsed = now - timeMillis;
+                    long remains = 50 - elapsed;
+                    if (remains > 0) {
+                        try {
+                            Thread.sleep(remains);
+                        } catch (InterruptedException e) {
+                        }
+                    } else {
+                        if (now - lastWarn > 15000 && elapsed > 2000) {
+                            mixinLogger.warn("Can't keep up! Did the system time change, or is the server overloaded? Running {}ms behind, skipping {} tick(s)", elapsed, elapsed / 50L);
+                            lastWarn = now;
+                        }
                     }
-                }
+                });
             }
-        }
-        catch (InterruptedException e) {
-
-        }
-        catch (ReportedException e) {
+        } catch (ReportedException e) {
             //reported Exception when ticking
             //do cleaning on error
             mixinLogger.error("fatal error.", e);
-            ((TaskSubmitter)this).cancelTasks();
+            ((TaskSubmitter) this).cancelTasks();
             for (Object playerEntity : playerEntities) {
                 String collect = Arrays.stream(e.getStackTrace()).map(t -> t.toString()).collect(Collectors.joining("\n"));
-                ((EntityPlayerMP)playerEntity).playerNetServerHandler.kickPlayerFromServer("Please reconnect, fatal world ticking exception: \n" + collect);
+                ((EntityPlayerMP) playerEntity).playerNetServerHandler.kickPlayerFromServer("Please reconnect, fatal world ticking exception: \n" + collect);
             }
         } finally {
             mixinLogger.info("Unloading world, exiting world thread");
@@ -214,19 +219,19 @@ public abstract class MixinWorldServer extends World implements Runnable {
     @Shadow
     public abstract List func_147486_a(int p_147486_1_, int p_147486_2_, int p_147486_3_, int p_147486_4_, int p_147486_5_, int p_147486_6_);
 
-    @Shadow public abstract void flush();
+    @Shadow
+    public abstract void flush();
 
-    @Shadow @Final private static Logger logger;
+    @Shadow
+    @Final
+    private static Logger logger;
 
-    @Shadow private Set pendingTickListEntriesHashSet;
+    @Shadow
+    public List<Teleporter> customTeleporters;
 
-    @Shadow private TreeSet pendingTickListEntriesTreeSet;
+    @Shadow
+    protected Set<ChunkCoordIntPair> doneChunks;
 
-    @Shadow public List<Teleporter> customTeleporters;
-
-    @Shadow protected Set<ChunkCoordIntPair> doneChunks;
-
-    private Set<NextTickListEntry> pendingTickSetEntriesThisTick = new ConcurrentSet<>();
     /**
      * 继承接口，但是接口在超类的mixin
      */
@@ -243,6 +248,7 @@ public abstract class MixinWorldServer extends World implements Runnable {
 
     /**
      * 替换集合
+     *
      * @param p_i45284_1_
      * @param p_i45284_2_
      * @param p_i45284_3_
@@ -257,10 +263,7 @@ public abstract class MixinWorldServer extends World implements Runnable {
      */
     @Inject(method = "<init>", at = @At("RETURN"))
     public void init(MinecraftServer p_i45284_1_, ISaveHandler p_i45284_2_, String p_i45284_3_, int p_i45284_4_, WorldSettings p_i45284_5_, Profiler p_i45284_6_, CallbackInfo ci) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
-        pendingTickListEntriesHashSet = new ConcurrentSkipListSet();
-        Constructor<TreeSet> declaredConstructor = TreeSet.class.getDeclaredConstructor(NavigableMap.class);
-        declaredConstructor.setAccessible(true);
-        pendingTickListEntriesTreeSet = declaredConstructor.newInstance(new ConcurrentSkipListMap());
+
         doneChunks = new ConcurrentSet<>();
         customTeleporters = new CopyOnWriteArrayList<>();
     }
@@ -269,9 +272,8 @@ public abstract class MixinWorldServer extends World implements Runnable {
     /**
      * block tick相关
      */
-    @Inject(method = "isBlockTickScheduledThisTick", at = @At(value = "INVOKE"),cancellable = true)
-    public void isBlockTickScheduledThisTick(int p_147477_1_, int p_147477_2_, int p_147477_3_, Block p_147477_4_, CallbackInfoReturnable<Boolean> cir)
-    {
+    @Inject(method = "isBlockTickScheduledThisTick", at = @At(value = "INVOKE"), cancellable = true)
+    public void isBlockTickScheduledThisTick(int p_147477_1_, int p_147477_2_, int p_147477_3_, Block p_147477_4_, CallbackInfoReturnable<Boolean> cir) {
         NextTickListEntry nextticklistentry = new NextTickListEntry(p_147477_1_, p_147477_2_, p_147477_3_, p_147477_4_);
         Queue<NextTickListEntry> nextTickListEntries = chunkTickListMap.get(new ChunkCoordIntPair(p_147477_1_ >> 4, p_147477_3_ >> 4));
         cir.setReturnValue(nextTickListEntries != null && nextTickListEntries.contains(nextticklistentry));
@@ -279,6 +281,7 @@ public abstract class MixinWorldServer extends World implements Runnable {
 
     /**
      * 这个是从区块反序列化nexttick
+     *
      * @param p_147446_1_ x
      * @param p_147446_2_ y
      * @param p_147446_3_ z
@@ -292,24 +295,23 @@ public abstract class MixinWorldServer extends World implements Runnable {
         NextTickListEntry nextticklistentry = new NextTickListEntry(p_147446_1_, p_147446_2_, p_147446_3_, p_147446_4_);
         nextticklistentry.setPriority(p_147446_6_);
 
-        if (p_147446_4_.getMaterial() != Material.air)
-        {
-            nextticklistentry.setScheduledTime((long)p_147446_5_ + this.worldInfo.getWorldTotalTime());
+        if (p_147446_4_.getMaterial() != Material.air) {
+            nextticklistentry.setScheduledTime((long) p_147446_5_ + this.worldInfo.getWorldTotalTime());
         }
         ChunkCoordIntPair chunkCoordIntPair = new ChunkCoordIntPair(p_147446_1_ >> 4, p_147446_3_ >> 4);
         Queue<NextTickListEntry> nextTickListEntries = chunkTickListMap.get(chunkCoordIntPair);
-        if(nextTickListEntries == null) {
+        if (nextTickListEntries == null) {
             nextTickListEntries = new ConcurrentLinkedQueue<>();
             chunkTickListMap.put(chunkCoordIntPair, nextTickListEntries);
         }
         nextTickListEntries.add(nextticklistentry); //区块刚加出来，判你个鬼
-                                                    //hashset大概也是这个意思吧，通过这个监测有没有重复block tick的存在
+        //hashset大概也是这个意思吧，通过这个监测有没有重复block tick的存在
         /**
-        if (!this.pendingTickListEntriesHashSet.contains(nextticklistentry))
-        {
-            this.pendingTickListEntriesHashSet.add(nextticklistentry);
-            this.pendingTickListEntriesTreeSet.add(nextticklistentry);
-        }**/
+         if (!this.pendingTickListEntriesHashSet.contains(nextticklistentry))
+         {
+         this.pendingTickListEntriesHashSet.add(nextticklistentry);
+         this.pendingTickListEntriesTreeSet.add(nextticklistentry);
+         }**/
         ci.cancel();
     }
 
@@ -323,7 +325,7 @@ public abstract class MixinWorldServer extends World implements Runnable {
         ArrayList arraylist = null;
         ChunkCoordIntPair chunkcoordintpair = p_72920_1_.getChunkCoordIntPair();
         Queue<NextTickListEntry> nextTickListEntries = chunkTickListMap.get(chunkcoordintpair);
-        if(nextTickListEntries != null) {
+        if (nextTickListEntries != null) {
             arraylist = Lists.newArrayList(nextTickListEntries);
         }
         cir.setReturnValue(arraylist);
@@ -332,6 +334,7 @@ public abstract class MixinWorldServer extends World implements Runnable {
 
     /**
      * 方块更新etc
+     *
      * @param p_72955_1_
      */
     @Inject(method = "tickUpdates", at = @At("HEAD"), cancellable = true)
@@ -344,6 +347,7 @@ public abstract class MixinWorldServer extends World implements Runnable {
 
     /**
      * 永远安全，chunk的卸载将全部被挤到最后在做，在那之前所有的方块都有机会被tick
+     *
      * @param pair
      * @param queue
      */
@@ -352,24 +356,17 @@ public abstract class MixinWorldServer extends World implements Runnable {
             NextTickListEntry nextticklistentry = queue.poll();
             Block block = this.getBlock(nextticklistentry.xCoord, nextticklistentry.yCoord, nextticklistentry.zCoord);
 
-            if (block.getMaterial() != Material.air && Block.isEqualTo(block, nextticklistentry.func_151351_a()))
-            {
-                try
-                {
+            if (block.getMaterial() != Material.air && Block.isEqualTo(block, nextticklistentry.func_151351_a())) {
+                try {
                     block.updateTick(this, nextticklistentry.xCoord, nextticklistentry.yCoord, nextticklistentry.zCoord, this.rand);
-                }
-                catch (Throwable throwable1)
-                {
+                } catch (Throwable throwable1) {
                     CrashReport crashreport = CrashReport.makeCrashReport(throwable1, "Exception while ticking a block");
                     CrashReportCategory crashreportcategory = crashreport.makeCategory("Block being ticked");
                     int k;
 
-                    try
-                    {
+                    try {
                         k = this.getBlockMetadata(nextticklistentry.xCoord, nextticklistentry.yCoord, nextticklistentry.zCoord);
-                    }
-                    catch (Throwable throwable)
-                    {
+                    } catch (Throwable throwable) {
                         k = -1;
                     }
 
@@ -382,6 +379,7 @@ public abstract class MixinWorldServer extends World implements Runnable {
 
     /**
      * 触发方块更新
+     *
      * @param x
      * @param y
      * @param z
@@ -398,18 +396,14 @@ public abstract class MixinWorldServer extends World implements Runnable {
         //byte b0 = isForced ? 0 : 8;
         byte b0 = 0;
 
-        if (this.scheduledUpdatesAreImmediate && block.getMaterial() != Material.air)
-        {
-            if (block.requiresUpdates())
-            {
+        if (this.scheduledUpdatesAreImmediate && block.getMaterial() != Material.air) {
+            if (block.requiresUpdates()) {
                 b0 = 8;
 
-                if (this.checkChunksExist(nextticklistentry.xCoord - b0, nextticklistentry.yCoord - b0, nextticklistentry.zCoord - b0, nextticklistentry.xCoord + b0, nextticklistentry.yCoord + b0, nextticklistentry.zCoord + b0))
-                {
+                if (this.checkChunksExist(nextticklistentry.xCoord - b0, nextticklistentry.yCoord - b0, nextticklistentry.zCoord - b0, nextticklistentry.xCoord + b0, nextticklistentry.yCoord + b0, nextticklistentry.zCoord + b0)) {
                     Block block1 = this.getBlock(nextticklistentry.xCoord, nextticklistentry.yCoord, nextticklistentry.zCoord);
 
-                    if (block1.getMaterial() != Material.air && block1 == nextticklistentry.func_151351_a())
-                    {
+                    if (block1.getMaterial() != Material.air && block1 == nextticklistentry.func_151351_a()) {
                         block1.updateTick(this, nextticklistentry.xCoord, nextticklistentry.yCoord, nextticklistentry.zCoord, this.rand);
                     }
                 }
@@ -420,16 +414,14 @@ public abstract class MixinWorldServer extends World implements Runnable {
             p_147454_5_ = 1;
         }
 
-        if (this.checkChunksExist(x - b0, y - b0, z - b0, x + b0, y + b0, z + b0))
-        {
-            if (block.getMaterial() != Material.air)
-            {
-                nextticklistentry.setScheduledTime((long)p_147454_5_ + this.worldInfo.getWorldTotalTime());
+        if (this.checkChunksExist(x - b0, y - b0, z - b0, x + b0, y + b0, z + b0)) {
+            if (block.getMaterial() != Material.air) {
+                nextticklistentry.setScheduledTime((long) p_147454_5_ + this.worldInfo.getWorldTotalTime());
                 nextticklistentry.setPriority(p_147454_6_);
             }
             ChunkCoordIntPair chunkCoordIntPair = new ChunkCoordIntPair(x >> 4, z >> 4);
             Queue<NextTickListEntry> nextTickListEntries = chunkTickListMap.get(chunkCoordIntPair);
-            if(nextTickListEntries == null) {
+            if (nextTickListEntries == null) {
                 nextTickListEntries = new ConcurrentLinkedQueue<>();
                 chunkTickListMap.put(chunkCoordIntPair, nextTickListEntries);
             }
@@ -440,10 +432,16 @@ public abstract class MixinWorldServer extends World implements Runnable {
 
     /**
      * 卸载区块的事情留在最后干
+     *
      * @return
      */
     @Redirect(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/chunk/IChunkProvider;unloadQueuedChunks()Z"))
     public boolean noopUnloadChunks(IChunkProvider iChunkProvider) {
         return false;
     }
+
+    public Map<ChunkCoordIntPair, Queue<NextTickListEntry>> getPendingTicks() {
+        return chunkTickListMap;
+    }
+
 }

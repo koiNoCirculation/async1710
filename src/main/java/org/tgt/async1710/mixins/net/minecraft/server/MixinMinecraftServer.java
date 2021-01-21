@@ -85,6 +85,7 @@ public abstract class MixinMinecraftServer implements WorldInfoGetter {
 
     @Inject(method = "tick", cancellable = true, at = @At(value = "INVOKE", shift = At.Shift.BEFORE, target = "Lcpw/mods/fml/common/FMLCommonHandler;onPreServerTick()V", remap = false))
     public void tick(CallbackInfo ci) {
+        //long timeMillis = System.currentTimeMillis();
         tickTimer.record(() -> {
             FMLCommonHandler.instance().onPreServerTick();
             ++this.tickCounter;
@@ -107,6 +108,7 @@ public abstract class MixinMinecraftServer implements WorldInfoGetter {
             }
             FMLCommonHandler.instance().onPostServerTick();
         });
+        //logger.info("entity tick time = {} ms", System.currentTimeMillis() - timeMillis);
         ci.cancel();
     }
 

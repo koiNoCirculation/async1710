@@ -23,12 +23,12 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.tgt.async1710.GlobalExecutor;
-import org.tgt.async1710.ReentrantReadWriteLockedList;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * TODO:
@@ -87,8 +87,8 @@ public abstract class MixinEntityPlayerMP extends EntityPlayer {
 
     @Inject(method = "<init>", at = @At("RETURN"))
     public void init(MinecraftServer p_i45285_1_, WorldServer p_i45285_2_, GameProfile p_i45285_3_, ItemInWorldManager p_i45285_4_, CallbackInfo ci) {
-        loadedChunks = new ReentrantReadWriteLockedList<>(new LinkedList());
-        destroyedItemsNetCache = new ReentrantReadWriteLockedList<Integer>(new LinkedList<>());
+        loadedChunks = new CopyOnWriteArrayList<>(new LinkedList());
+        destroyedItemsNetCache = new CopyOnWriteArrayList(new LinkedList<>());
     }
 
 
@@ -111,17 +111,20 @@ public abstract class MixinEntityPlayerMP extends EntityPlayer {
             this.openContainer = this.inventoryContainer;
         }
 
-        ((ReentrantReadWriteLockedList<Integer>)destroyedItemsNetCache).foreachWithRemoveConcurrent(Int ->
-            playerNetServerHandler.sendPacket(new S13PacketDestroyEntities(Int))
-        , (Int) ->
-            true
-        , GlobalExecutor.fjp);
+        Iterator<Integer> iteratorInt = destroyedItemsNetCache.iterator();
+        while (iteratorInt.hasNext()) {
+            Integer next = iteratorInt.next();
+            playerNetServerHandler.sendPacket(new S13PacketDestroyEntities(next));
+            iteratorInt.remove();
+        }
+
         if (!this.loadedChunks.isEmpty())
         {
             ArrayList<Chunk> chunksToSend = new ArrayList<>();
             ArrayList<TileEntity> chunkContainedTiles = new ArrayList<>();
-
-            ((ReentrantReadWriteLockedList<ChunkCoordIntPair>)loadedChunks).foreachWithRemove((chunkcoordintpair) -> {
+            Iterator<ChunkCoordIntPair> iteratorChunks = loadedChunks.iterator();
+            while (iteratorChunks.hasNext()) {
+                ChunkCoordIntPair chunkcoordintpair = iteratorChunks.next();
                 if (chunkcoordintpair != null)
                 {
                     if (this.worldObj.blockExists(chunkcoordintpair.chunkXPos << 4, 0, chunkcoordintpair.chunkZPos << 4))
@@ -137,25 +140,21 @@ public abstract class MixinEntityPlayerMP extends EntityPlayer {
                             //BugFix: 16 makes it load an extra chunk, which isn't associated with a player, which makes it not unload unless a player walks near it.
                         }
                     }
-                }
-            }, (chunkcoordintpair) -> {
-                if (chunkcoordintpair != null)
-                {
                     if (this.worldObj.blockExists(chunkcoordintpair.chunkXPos << 4, 0, chunkcoordintpair.chunkZPos << 4))
                     {
                         Chunk chunk;
                         chunk = this.worldObj.getChunkFromChunkCoords(chunkcoordintpair.chunkXPos, chunkcoordintpair.chunkZPos);
                         if (chunk.func_150802_k())
                         {
-                            return true;
+                            iteratorChunks.remove();
                         }
                     }
                 }
-                return false;
-            });
-            List<ChunkCoordIntPair> toRemoves = new ArrayList<>();
+            }
 
-            ((ReentrantReadWriteLockedList<ChunkCoordIntPair>)loadedChunks).foreachWithBreak(chunkcoordintpair -> {
+            iteratorChunks = loadedChunks.iterator();
+            while (iteratorChunks.hasNext()) {
+                ChunkCoordIntPair chunkcoordintpair = iteratorChunks.next();
                 if(chunkcoordintpair != null) {
                     if (this.worldObj.blockExists(chunkcoordintpair.chunkXPos << 4, 0, chunkcoordintpair.chunkZPos << 4))
                     {
@@ -166,16 +165,16 @@ public abstract class MixinEntityPlayerMP extends EntityPlayer {
                             chunksToSend.add(chunk);
                             chunkContainedTiles.addAll(((WorldServer)this.worldObj).func_147486_a(chunkcoordintpair.chunkXPos * 16, 0, chunkcoordintpair.chunkZPos * 16, chunkcoordintpair.chunkXPos * 16 + 15, 256, chunkcoordintpair.chunkZPos * 16 + 15));
                             //BugFix: 16 makes it load an extra chunk, which isn't associated with a player, which makes it not unload unless a player walks near it.
-                            toRemoves.add(chunkcoordintpair);
+                            iteratorChunks.remove();
                         }
                     }
                 } else {
-                    toRemoves.add(chunkcoordintpair);
+                    iteratorChunks.remove();
                 }
-                return chunksToSend.size() < S26PacketMapChunkBulk.func_149258_c();
-            });
-            loadedChunks.removeAll(toRemoves);
-
+                if(chunksToSend.size() < S26PacketMapChunkBulk.func_149258_c()) {
+                    break;
+                }
+            }
 
             if (!chunksToSend.isEmpty())
             {
