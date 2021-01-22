@@ -14,6 +14,7 @@
     "net.minecraft.world.chunk.MixinChunkProviderServer",
     "net.minecraft.world.gen.layer.MixinIntCache",
     "net.minecraft.server.management.MixinPlayerManager",
+    "net.minecraft.network.MixinNetHandlerPlayerServer",
     "net.minecraft.entity.MixinEntity",
     "net.minecraft.tileentity.MixinTileEntity"
   ],

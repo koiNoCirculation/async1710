@@ -34,7 +34,6 @@ public abstract class MixinChunkProviderServer {
             try {
                 ((TaskSubmitter)worldObj).submit(() -> dropChunk(p_73241_1_, p_73241_2_)).get(50, TimeUnit.MILLISECONDS);
             } catch (TimeoutException e) {
-                e.printStackTrace();
             }
             ci.cancel();
         }
