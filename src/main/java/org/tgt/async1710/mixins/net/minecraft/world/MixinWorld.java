@@ -226,24 +226,17 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
     //public void removePlayerEntityDangerously(Entity p_72973_1_)
     @Inject(method = "removePlayerEntityDangerously", at = @At(value = "HEAD", remap = false), cancellable = true)
     public void _removePlayerEntityDangerously(Entity p_72973_1_, CallbackInfo ci) {
-        submit(() -> removePlayerEntityDangerously(p_72973_1_));
-        if(threadName != Thread.currentThread().getName() && getRunning()) {
-            try {
-                submit(() -> removePlayerEntityDangerously(p_72973_1_));
-            } catch (Exception e) {
-            }
-            ci.cancel();
-        }
+        submit(() -> removePlayerEntityDangerously(p_72973_1_), ci);
     }
 
     @Inject(method = "removeEntity", at = @At(value = "HEAD"), cancellable = true)
     private void _removeEntity(Entity p_72973_1_, CallbackInfo ci) {
-        submit(() -> removeEntity(p_72973_1_));
+        submit(() -> removeEntity(p_72973_1_), ci);
 
     }
 
     @Inject(method = "updateEntityWithOptionalForce", at = @At(value = "HEAD"), cancellable = true)
     public void _updateEntityWithOptionalForce(Entity p_72866_1_, boolean p_72866_2_, CallbackInfo ci) {
-        submit(() -> updateEntityWithOptionalForce(p_72866_1_, p_72866_2_));
+        submit(() -> updateEntityWithOptionalForce(p_72866_1_, p_72866_2_), ci);
     }
 }

@@ -2,6 +2,7 @@ package org.tgt.async1710.mixins.net.minecraft.world;
 
 import cpw.mods.fml.common.FMLCommonHandler;
 import io.micrometer.core.instrument.Timer;
+import net.minecraft.block.Block;
 import net.minecraft.crash.CrashReport;
 import net.minecraft.entity.EntityTracker;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -26,8 +27,11 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.tgt.async1710.MonitorRegistry;
 import org.tgt.async1710.TaskSubmitter;
+import org.tgt.async1710.WorldUtils;
 
 import java.util.Arrays;
 import java.util.stream.Collectors;
@@ -158,8 +162,8 @@ public abstract class MixinWorldServer extends World implements Runnable {
         trackEntityTimer = MonitorRegistry.getInstance().timer("trackEntities", "thread", Thread.currentThread().getName());
         tickTimer = MonitorRegistry.getInstance().timer("worldServerTick", "thread", Thread.currentThread().getName());
         try {
-            initialChunkLoad();
             running = true;
+            initialChunkLoad();
             MinecraftForge.EVENT_BUS.post(new WorldEvent.Load(this));
             while (running) {
                 tickTimer.record(() -> {
@@ -231,5 +235,26 @@ public abstract class MixinWorldServer extends World implements Runnable {
     @Redirect(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/chunk/IChunkProvider;unloadQueuedChunks()Z"))
     public boolean noopUnloadChunks(IChunkProvider iChunkProvider) {
         return false;
+    }
+
+    @Inject(method = "tickUpdates", at = @At("HEAD"))
+    public void logtickUpdates(boolean p_72955_1_, CallbackInfoReturnable<Boolean> cir) {
+        if(((WorldUtils)this).getThreadName() != Thread.currentThread().getName()) {
+            Thread.dumpStack();
+        }
+    }
+
+    @Inject(method = "func_147446_b", at = @At("HEAD"))
+    public void logfunc_147446_b(int p_147446_1_, int p_147446_2_, int p_147446_3_, Block p_147446_4_, int p_147446_5_, int p_147446_6_, CallbackInfo ci) {
+        if(((WorldUtils)this).getThreadName() != Thread.currentThread().getName()) {
+            Thread.dumpStack();
+        }
+    }
+
+    @Inject(method = "scheduleBlockUpdateWithPriority", at = @At("HEAD"))
+    public void logscheduleBlockUpdateWithPriority(int p_147454_1_, int p_147454_2_, int p_147454_3_, Block p_147454_4_, int p_147454_5_, int p_147454_6_, CallbackInfo ci) {
+        if(((WorldUtils)this).getThreadName() != Thread.currentThread().getName()) {
+            Thread.dumpStack();
+        }
     }
 }

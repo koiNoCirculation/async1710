@@ -34,28 +34,28 @@ public abstract class MixinNetHandlerPlayerServer {
 
     @Shadow public abstract void processUpdateSign(C12PacketUpdateSign packetIn);
 
-    @Inject(method = "processPlayer", at = @At("HEAD"))
+    @Inject(method = "processPlayer", cancellable = true,at = @At("HEAD"))
     public void _processPlayer(C03PacketPlayer packetIn, CallbackInfo ci) {
         WorldServer worldserver = this.serverController.worldServerForDimension(this.playerEntity.dimension);
         ((TaskSubmitter) worldserver).submit(() -> processPlayer(packetIn), ci);
     }
 
-    @Inject(method = "processPlayerDigging", at = @At("HEAD"))
+    @Inject(method = "processPlayerDigging", cancellable = true,at = @At("HEAD"))
     public void _processPlayerDigging(C07PacketPlayerDigging packetIn, CallbackInfo ci) {
         WorldServer worldserver = this.serverController.worldServerForDimension(this.playerEntity.dimension);
         ((TaskSubmitter) worldserver).submit(() -> processPlayerDigging(packetIn), ci);
     }
-    @Inject(method = "processPlayerBlockPlacement", at = @At("HEAD"))
+    @Inject(method = "processPlayerBlockPlacement", cancellable = true,at = @At("HEAD"))
     public void _processPlayerBlockPlacement(C08PacketPlayerBlockPlacement packetIn, CallbackInfo ci) {
         WorldServer worldserver = this.serverController.worldServerForDimension(this.playerEntity.dimension);
         ((TaskSubmitter) worldserver).submit(() -> processPlayerBlockPlacement(packetIn), ci);
     }
-    @Inject(method = "processUseEntity", at = @At("HEAD"))
+    @Inject(method = "processUseEntity", cancellable = true,at = @At("HEAD"))
     public void _processUseEntity(C02PacketUseEntity packetIn, CallbackInfo ci) {
         WorldServer worldserver = this.serverController.worldServerForDimension(this.playerEntity.dimension);
         ((TaskSubmitter) worldserver).submit(() -> processUseEntity(packetIn), ci);
     }
-    @Inject(method = "processUpdateSign", at = @At("HEAD"))
+    @Inject(method = "processUpdateSign", cancellable = true,at = @At("HEAD"))
     public void _processUpdateSign(C12PacketUpdateSign packetIn, CallbackInfo ci) {
         WorldServer worldserver = this.serverController.worldServerForDimension(this.playerEntity.dimension);
         ((TaskSubmitter) worldserver).submit(() -> processUpdateSign(packetIn), ci);

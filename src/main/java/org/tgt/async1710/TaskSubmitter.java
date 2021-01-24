@@ -42,7 +42,6 @@ public interface TaskSubmitter {
             ci.cancel();
             return Optional.of(submit0(task));
         } else {
-            task.call();
             return Optional.empty();
         }
     }
@@ -55,7 +54,6 @@ public interface TaskSubmitter {
             ci.cancel();
             return Optional.of(submit0(task));
         } else {
-            task.run();
             return Optional.empty();
         }
     }
@@ -68,7 +66,6 @@ public interface TaskSubmitter {
             ci.setReturnValue(defaultValue);
             return Optional.of(submit0(task));
         } else {
-            ci.setReturnValue(task.call());
             return Optional.empty();
         }
     }
@@ -82,7 +79,6 @@ public interface TaskSubmitter {
             ci.cancel();
             return Optional.of(submit0(task));
         } else {
-            task.run();
             return Optional.empty();
         }
     }
@@ -96,8 +92,6 @@ public interface TaskSubmitter {
              * tps为0，5
              */
             ci.setReturnValue(submit0(task).get(2000, TimeUnit.MILLISECONDS));
-        } else {
-            ci.setReturnValue(task.call());
         }
     }
 
@@ -111,10 +105,8 @@ public interface TaskSubmitter {
              * tps为0，5
              */
             submit0(task).get(2000, TimeUnit.MILLISECONDS);
-        } else {
-            task.run();
+            ci.cancel();
         }
-        ci.cancel();
     }
 
     default <T> T submitWait(Callable<T> task) throws Exception {
