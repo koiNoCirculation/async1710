@@ -4,6 +4,7 @@ import net.minecraft.world.storage.ISaveHandler;
 import net.minecraft.world.storage.WorldInfo;
 
 public interface WorldInfoGetter {
-    public ISaveHandler getSaveHandler();
-    public WorldInfo getWorldInfo();
+    ISaveHandler getSaveHandler();
+
+    WorldInfo getWorldInfo();
 }

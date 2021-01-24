@@ -1,6 +1,7 @@
 package org.tgt.async1710.mixins.net.minecraft.server.management;
 
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.network.Packet;
 import net.minecraft.server.management.PlayerManager;
 import net.minecraft.world.World;
 import org.apache.logging.log4j.LogManager;
@@ -21,6 +22,8 @@ public abstract class MixinPlayerManager {
 
     @Shadow public abstract void updateMountedMovingPlayer(EntityPlayerMP p_72685_1_);
 
+    //调用链条：ServerConfigurationManager -> PlayerManager 唯一，所以直接patch上层
+    /**
     @Inject(method = "updateMountedMovingPlayer", at = @At("HEAD"), cancellable = true)
     public void _updateMountedMovingPlayer(EntityPlayerMP p_72685_1_, CallbackInfo ci) throws ExecutionException, InterruptedException {
         logger.info("player managedXZ = ({},{}), xz = ({},{})", p_72685_1_.managedPosX, p_72685_1_.managedPosZ, p_72685_1_.managedPosZ, p_72685_1_.posX, p_72685_1_, p_72685_1_.posZ);
@@ -30,6 +33,11 @@ public abstract class MixinPlayerManager {
             ((TaskSubmitter)worldObj1).submit(() -> updateMountedMovingPlayer(p_72685_1_)).get();
             ci.cancel();
         }
+    }
+    **/
+
+    public void sendToAllPlayersWatchingChunk(Packet p_151251_1_) {
+
     }
 
     /**

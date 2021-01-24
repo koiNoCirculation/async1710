@@ -24,6 +24,7 @@ import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.tgt.async1710.MonitorRegistry;
 import org.tgt.async1710.TaskSubmitter;
@@ -231,6 +232,4 @@ public abstract class MixinWorldServer extends World implements Runnable {
     public boolean noopUnloadChunks(IChunkProvider iChunkProvider) {
         return false;
     }
-
-
 }

@@ -46,6 +46,8 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
 
     @Shadow public abstract void removePlayerEntityDangerously(Entity p_72973_1_);
 
+    @Shadow public abstract void updateEntityWithOptionalForce(Entity p_72866_1_, boolean p_72866_2_);
+
     private Timer weatherTimer;
 
     private Timer entityTimer;
@@ -74,7 +76,7 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
     }
 
     @Override
-    public <T> FutureTask<T> submit(Callable<T> task) {
+    public <T> FutureTask<T> submit0(Callable<T> task) {
         FutureTask<T> tFutureTask = new FutureTask<>(task);
         if (getRunning()) {
             tasks.add(tFutureTask);
@@ -83,7 +85,7 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
     }
 
     @Override
-    public FutureTask<?> submit(Runnable task) {
+    public FutureTask<?> submit0(Runnable task) {
         FutureTask<?> tFutureTask = new FutureTask(task, null);
         if (getRunning()) {
             tasks.add(tFutureTask);
@@ -217,22 +219,17 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
     }
 
     @Inject(method = "spawnEntityInWorld", at = @At(value = "HEAD", remap = false), cancellable = true)
-    public void _spawnEntityInWorld(Entity p_72838_1_, CallbackInfoReturnable<Boolean> cir) {
-        if(threadName != Thread.currentThread().getName() && getRunning()) {
-            try {
-                submit(() -> spawnEntityInWorld(p_72838_1_)).get(50, TimeUnit.MILLISECONDS);
-            } catch (Exception e) {
-            }
-            cir.setReturnValue(true);
-        }
+    public void _spawnEntityInWorld(Entity p_72838_1_, CallbackInfoReturnable<Boolean> cir) throws Exception {
+        submit(() -> spawnEntityInWorld(p_72838_1_), cir, true);
     }
 
     //public void removePlayerEntityDangerously(Entity p_72973_1_)
     @Inject(method = "removePlayerEntityDangerously", at = @At(value = "HEAD", remap = false), cancellable = true)
     public void _removePlayerEntityDangerously(Entity p_72973_1_, CallbackInfo ci) {
+        submit(() -> removePlayerEntityDangerously(p_72973_1_));
         if(threadName != Thread.currentThread().getName() && getRunning()) {
             try {
-                submit(() -> removePlayerEntityDangerously(p_72973_1_)).get(50, TimeUnit.MILLISECONDS);
+                submit(() -> removePlayerEntityDangerously(p_72973_1_));
             } catch (Exception e) {
             }
             ci.cancel();
@@ -241,13 +238,12 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
 
     @Inject(method = "removeEntity", at = @At(value = "HEAD"), cancellable = true)
     private void _removeEntity(Entity p_72973_1_, CallbackInfo ci) {
-        if(threadName != Thread.currentThread().getName() && getRunning()) {
-            try {
-                submit(() -> removeEntity(p_72973_1_)).get(50, TimeUnit.MILLISECONDS);
-            } catch (Exception e) {
-            }
-            ci.cancel();
-        }
+        submit(() -> removeEntity(p_72973_1_));
+
     }
 
+    @Inject(method = "updateEntityWithOptionalForce", at = @At(value = "HEAD"), cancellable = true)
+    public void _updateEntityWithOptionalForce(Entity p_72866_1_, boolean p_72866_2_, CallbackInfo ci) {
+        submit(() -> updateEntityWithOptionalForce(p_72866_1_, p_72866_2_));
+    }
 }
