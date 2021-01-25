@@ -29,7 +29,9 @@ import org.tgt.async1710.TaskSubmitter;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Mixin(ServerConfigurationManager.class)
 public abstract class MixinServerConfigurationManager {
@@ -338,17 +340,23 @@ public abstract class MixinServerConfigurationManager {
                     teleporter.placeInPortal(entityIn, entityx, entityy, entityz, f);
                     dst.spawnEntityInWorld(entityIn);
                     dst.updateEntityWithOptionalForce(entityIn, false);
+                }).map(fut -> {
+                    try {
+                        return fut.get(2000, TimeUnit.MILLISECONDS);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } catch (ExecutionException e) {
+                        e.printStackTrace();
+                    } catch (TimeoutException e) {
+                        e.printStackTrace();
+                    }
+                    return 0;
                 });
             }
 
             src.theProfiler.endSection();
         }
-        /**
-         * 执行线程:dst
-         */
-        ((TaskSubmitter) dst).submit(() -> {
-            entityIn.setWorld(dst);
-        });
+        entityIn.setWorld(dst);
     }
 
     @Inject(method = "<init>", at = @At("RETURN"))
