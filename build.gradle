@@ -69,7 +69,8 @@ dependencies {
 
     compile 'io.micrometer:micrometer-registry-prometheus:latest.release'
 
-
+    compileOnly files('libs/EnderIO-1.7.10-2.3.1.16-dev.jar',
+            'libs/EnderCore-1.7.10-1.7.10-0.2.0.35_beta-dev.jar')
 }
 
 jar {
