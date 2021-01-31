@@ -19,6 +19,7 @@ import net.minecraft.world.WorldProvider;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.demo.DemoWorldManager;
 import net.minecraftforge.common.DimensionManager;
+import org.apache.logging.log4j.Logger;
 import org.spongepowered.asm.mixin.*;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -68,6 +69,9 @@ public abstract class MixinServerConfigurationManager {
     }**/
 
 
+    @Shadow @Final private static Logger logger;
+
+    @Shadow public abstract void transferEntityToWorld(Entity entityIn, int p_82448_2_, WorldServer p_82448_3_, WorldServer p_82448_4_, Teleporter teleporter);
 
     /**
      * @author
@@ -84,10 +88,9 @@ public abstract class MixinServerConfigurationManager {
         /**
          * 执行线程：player.getServerForPlayer()
          */
-        ((TaskSubmitter)dst).submit(() -> {
-            dst.getPlayerManager().addPlayer(player);
-            dst.theChunkProviderServer.loadChunk((int)player.posX >> 4, (int)player.posZ >> 4);
-        });
+        player.loadedChunks.clear(); //这里是为了防止客户端bug
+        dst.getPlayerManager().addPlayer(player);
+        dst.theChunkProviderServer.loadChunk((int)player.posX >> 4, (int)player.posZ >> 4);
     }
 
 
@@ -111,14 +114,6 @@ public abstract class MixinServerConfigurationManager {
     }
 
     /**
-     * Called on respawn
-     */
-    @Inject(method = "recreatePlayerEntity", cancellable = true, at = @At("HEAD"))
-    public void _recreatePlayerEntity(EntityPlayerMP player, int dimension, boolean conqueredEnd, CallbackInfoReturnable<EntityPlayerMP> cir) throws Exception {
-        ((TaskSubmitter) DimensionManager.getWorld(dimension)).submitWait(() -> recreatePlayerEntity(player, dimension, conqueredEnd), cir);
-    }
-
-    /**
      * 执行线程：worldToRespawn
      * @param player
      * @param respawnDimension
@@ -126,7 +121,7 @@ public abstract class MixinServerConfigurationManager {
      * @return
      */
     @Overwrite(remap = false)
-    public EntityPlayerMP recreatePlayerEntity(EntityPlayerMP player, int respawnDimension, boolean conqueredEnd) throws Exception {
+    public EntityPlayerMP recreatePlayerEntity(EntityPlayerMP player, int respawnDimension, boolean conqueredEnd) {
         WorldServer worldToRespawn = mcServer.worldServerForDimension(respawnDimension);
         WorldServer worldPlayerIn = mcServer.worldServerForDimension(player.dimension);
         if (worldToRespawn == null)
@@ -143,14 +138,14 @@ public abstract class MixinServerConfigurationManager {
             worldPlayerIn.getEntityTracker().removePlayerFromTrackers(player);
             worldPlayerIn.getEntityTracker().untrackEntity(player);
             worldPlayerIn.getPlayerManager().removePlayer(player);
+            /**
+             * 异步remove
+             */
+            worldPlayerIn.removePlayerEntityDangerously(player);
         });
 
         this.playerEntityList.remove(player);
 
-        /**
-         * 异步remove
-         */
-        worldPlayerIn.removePlayerEntityDangerously(player);
 
         ChunkCoordinates bedChunkLocation = player.getBedLocation(respawnDimension);
         boolean spawnForced = player.isSpawnForced(respawnDimension);
@@ -224,7 +219,7 @@ public abstract class MixinServerConfigurationManager {
             respawnedPlayer.setHealth(respawnedPlayer.getHealth());
             FMLCommonHandler.instance().firePlayerRespawnEvent(respawnedPlayer);
             return respawnedPlayer;
-        });
+        }, null);
     }
 
     /**
@@ -238,7 +233,11 @@ public abstract class MixinServerConfigurationManager {
     @Inject(method = "transferEntityToWorld(Lnet/minecraft/entity/Entity;ILnet/minecraft/world/WorldServer;Lnet/minecraft/world/WorldServer;Lnet/minecraft/world/Teleporter;)V", remap = false, at = @At("HEAD"), cancellable = true)
     public void _transferEntityToWorld(Entity entityIn, int p_82448_2_, WorldServer src, WorldServer dst, Teleporter teleporter, CallbackInfo ci)
     {
-        ((TaskSubmitter)src).submit(() -> transferEntityToWorld(entityIn, p_82448_2_, src, dst, teleporter), ci);
+        try {
+            ((TaskSubmitter)dst).submitWait(() -> transferEntityToWorld(entityIn, p_82448_2_, src, dst, teleporter), ci);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
 
@@ -254,9 +253,9 @@ public abstract class MixinServerConfigurationManager {
 
         worldserverSrc.removePlayerEntityDangerously(player);
         player.isDead = false;
-        this.transferEntityToWorld(player, srcDim, worldserverSrc, worldserverDst, teleporter);
-        this.func_72375_a(player, worldserverSrc);
         ((TaskSubmitter)worldserverDst).submit(() -> {
+            this.transferEntityToWorld(player, srcDim, worldserverSrc, worldserverDst, teleporter);
+            this.func_72375_a(player, worldserverSrc);
             player.dimension = dstDim;
             player.playerNetServerHandler.setPlayerLocation(player.posX, player.posY, player.posZ, player.rotationYaw, player.rotationPitch);
             player.theItemInWorldManager.setWorld(worldserverDst);
@@ -276,87 +275,6 @@ public abstract class MixinServerConfigurationManager {
             FMLCommonHandler.instance().firePlayerChangedDimensionEvent(player, srcDim, dstDim);
         });
 
-    }
-
-    /**
-     * @author
-     * 执行线程：src
-     */
-    @Overwrite(remap = false)
-    public void transferEntityToWorld(Entity entityIn, int srcDimension, WorldServer src, WorldServer dst, Teleporter teleporter)
-    {
-        WorldProvider pOld = src.provider;
-        WorldProvider pNew = dst.provider;
-        double moveFactor = pOld.getMovementFactor() / pNew.getMovementFactor();
-        double chunkx = entityIn.posX * moveFactor;
-        double chunkz = entityIn.posZ * moveFactor;
-        double entityx = entityIn.posX;
-        double entityy = entityIn.posY;
-        double entityz = entityIn.posZ;
-        float f = entityIn.rotationYaw;
-        src.theProfiler.startSection("moving");
-
-        if (entityIn.dimension == 1)
-        {
-            ChunkCoordinates chunkcoordinates;
-
-            if (srcDimension == 1)
-            {
-                chunkcoordinates = dst.getSpawnPoint();
-            }
-            else
-            {
-                chunkcoordinates = dst.getEntrancePortalLocation();
-            }
-
-            chunkx = chunkcoordinates.posX;
-            entityIn.posY = chunkcoordinates.posY;
-            chunkz = chunkcoordinates.posZ;
-            entityIn.setLocationAndAngles(chunkx, entityIn.posY, chunkz, 90.0F, 0.0F);
-
-            if (entityIn.isEntityAlive())
-            {
-                src.updateEntityWithOptionalForce(entityIn, false);
-            }
-        }
-
-        src.theProfiler.endSection();
-
-        if (srcDimension != 1)
-        {
-            src.theProfiler.startSection("placing");
-            chunkx = MathHelper.clamp_int((int)chunkx, -29999872, 29999872);
-            chunkz = MathHelper.clamp_int((int)chunkz, -29999872, 29999872);
-
-            if (entityIn.isEntityAlive())
-            {
-                /**
-                 * 执行线程:dst
-                 */
-                double finalChunkx = chunkx;
-                double finalChunkz = chunkz;
-                ((TaskSubmitter) dst).submit(() -> {
-                    entityIn.setLocationAndAngles(finalChunkx, entityIn.posY, finalChunkz, entityIn.rotationYaw, entityIn.rotationPitch);
-                    teleporter.placeInPortal(entityIn, entityx, entityy, entityz, f);
-                    dst.spawnEntityInWorld(entityIn);
-                    dst.updateEntityWithOptionalForce(entityIn, false);
-                }).map(fut -> {
-                    try {
-                        return fut.get(2000, TimeUnit.MILLISECONDS);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    } catch (ExecutionException e) {
-                        e.printStackTrace();
-                    } catch (TimeoutException e) {
-                        e.printStackTrace();
-                    }
-                    return 0;
-                });
-            }
-
-            src.theProfiler.endSection();
-        }
-        entityIn.setWorld(dst);
     }
 
     @Inject(method = "<init>", at = @At("RETURN"))

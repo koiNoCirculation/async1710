@@ -83,7 +83,7 @@ public interface TaskSubmitter {
         }
     }
 
-    default <T> void submitWait(Callable<T> task, CallbackInfoReturnable<T> ci) throws Exception {
+    default <T> void submitWait(Callable<T> task, CallbackInfoReturnable<T> ci, T defaultValue) {
         String threadName = ((WorldUtils) this).getThreadName();
         boolean running = ((WorldUtils) this).getRunning();
 
@@ -91,12 +91,16 @@ public interface TaskSubmitter {
             /**
              * tps为0，5
              */
-            ci.setReturnValue(submit0(task).get(2000, TimeUnit.MILLISECONDS));
+            try {
+                ci.setReturnValue(submit0(task).get(500, TimeUnit.MILLISECONDS));
+            } catch (Exception e) {
+                ci.setReturnValue(defaultValue);
+            }
         }
     }
 
 
-    default void submitWait(Runnable task, CallbackInfoReturnable<?> ci) throws Exception {
+    default void submitWait(Runnable task, CallbackInfoReturnable<?> ci){
         String threadName = ((WorldUtils) this).getThreadName();
         boolean running = ((WorldUtils) this).getRunning();
 
@@ -104,12 +108,16 @@ public interface TaskSubmitter {
             /**
              * tps为0，5
              */
-            submit0(task).get(2000, TimeUnit.MILLISECONDS);
             ci.cancel();
+            try {
+                submit0(task).get(500, TimeUnit.MILLISECONDS);
+            } catch (Exception e) {
+                //e.printStackTrace();
+            }
         }
     }
 
-    default <T> T submitWait(Callable<T> task) throws Exception {
+    default <T> T submitWait(Callable<T> task, T defaultValue) {
         String threadName = ((WorldUtils) this).getThreadName();
         boolean running = ((WorldUtils) this).getRunning();
 
@@ -117,14 +125,24 @@ public interface TaskSubmitter {
             /**
              * tps为0，5
              */
-            return submit0(task).get(2000, TimeUnit.MILLISECONDS);
+            try {
+                return submit0(task).get(500, TimeUnit.MILLISECONDS);
+            } catch (Exception e) {
+                //e.printStackTrace();
+                return defaultValue;
+            }
         } else {
-            return task.call();
+            try {
+                return task.call();
+            } catch (Exception e) {
+                e.printStackTrace();
+                return defaultValue;
+            }
         }
     }
 
 
-    default void submitWait(Runnable task) throws Exception {
+    default void submitWait(Runnable task) {
         String threadName = ((WorldUtils) this).getThreadName();
         boolean running = ((WorldUtils) this).getRunning();
 
@@ -132,13 +150,33 @@ public interface TaskSubmitter {
             /**
              * tps为0，5
              */
-            submit0(task).get(2000, TimeUnit.MILLISECONDS);
+            try {
+                submit0(task).get(500, TimeUnit.MILLISECONDS);
+            } catch (Exception e) {
+                //e.printStackTrace();
+            }
         } else {
             task.run();
         }
     }
 
 
+    default void submitWait(Runnable task, CallbackInfo ci) {
+        String threadName = ((WorldUtils) this).getThreadName();
+        boolean running = ((WorldUtils) this).getRunning();
+
+        if(threadName != Thread.currentThread().getName() && running) {
+            /**
+             * tps为0，5
+             */
+            ci.cancel();
+            try {
+                submit0(task).get(500, TimeUnit.MILLISECONDS);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
 
     <T> FutureTask<T> submit0(Callable<T> task);
 
