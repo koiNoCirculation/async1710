@@ -17,6 +17,8 @@
     "net.minecraft.server.management.MixinPlayerManager",
     "net.minecraft.server.management.MixinServerConfigurationManager",
     "net.minecraft.network.MixinNetHandlerPlayerServer",
+    "net.minecraft.network.MixinNetworkManager",
+    "net.minecraft.network.MixinNetworkSystem",
     "net.minecraft.entity.MixinEntity",
     "net.minecraft.tileentity.MixinTileEntity"
   ],
