@@ -6,8 +6,11 @@
   ],
   "client": ["netty.MixinReadTimeoutHandler"],
   "server": [
+    "cpw.mods.fml.common.MixinFMLCommonHandler",
+    "cpw.mods.fml.common.eventhandler.MixinASMEventHandler",
     "net.minecraftforge.common.MixinDimensionManager",
     "net.minecraft.server.MixinMinecraftServer",
+    "net.minecraft.block.MixinBlock",
     "net.minecraft.world.MixinWorldServer",
     "net.minecraft.world.MixinWorld",
     "net.minecraft.world.chunk.MixinChunk",

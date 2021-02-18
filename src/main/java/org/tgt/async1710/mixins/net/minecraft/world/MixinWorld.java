@@ -15,22 +15,18 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.tgt.async1710.MonitorRegistry;
-import org.tgt.async1710.TaskSubmitter;
-import org.tgt.async1710.WorldUtils;
+import org.tgt.async1710.world.*;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.FutureTask;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 @Mixin(World.class)
 public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
 
     protected String threadName;
 
-    protected LinkedBlockingQueue<FutureTask<?>> tasks = new LinkedBlockingQueue<>();
+    protected LinkedBlockingQueue<Task> tasks = new LinkedBlockingQueue<>();
 
     @Shadow
     public abstract void removeEntity(Entity p_72900_1_);
@@ -76,34 +72,38 @@ public abstract class MixinWorld implements WorldUtils, TaskSubmitter {
     }
 
     @Override
-    public <T> FutureTask<T> submit0(Callable<T> task) {
-        FutureTask<T> tFutureTask = new FutureTask<>(task);
+    public <T> CompletableFuture<T> submit0(Callable<T> task) {
         if (getRunning()) {
-            tasks.add(tFutureTask);
+            CallableTask<T> tCallableTask = new CallableTask<>(task);
+            tasks.add(tCallableTask);
+            return tCallableTask.getFuture();
+        } else {
+            return null;
         }
-        return tFutureTask;
     }
 
     @Override
-    public FutureTask<?> submit0(Runnable task) {
-        FutureTask<?> tFutureTask = new FutureTask(task, null);
+    public CompletableFuture<?> submit0(Runnable task) {
         if (getRunning()) {
-            tasks.add(tFutureTask);
+            RunnableTask runnableTask = new RunnableTask(task);
+            tasks.add(runnableTask);
+            return runnableTask.getFuture();
+        } else {
+            return null;
         }
-        return tFutureTask;
     }
 
     @Override
     public void cancelTasks() {
         while (!tasks.isEmpty()) {
-            tasks.poll().cancel(true);
+            tasks.poll().cancel();
         }
     }
 
     @Override
     public void runTasks() {
         while (!tasks.isEmpty()) {
-            tasks.poll().run();
+            tasks.poll().call();
         }
     }
 

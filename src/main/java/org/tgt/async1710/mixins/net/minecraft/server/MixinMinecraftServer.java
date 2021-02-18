@@ -26,7 +26,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.tgt.async1710.MonitorRegistry;
-import org.tgt.async1710.WorldInfoGetter;
+import org.tgt.async1710.world.WorldInfoGetter;
 
 import java.io.File;
 import java.net.Proxy;

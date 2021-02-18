@@ -69,8 +69,12 @@ dependencies {
 
     compile 'io.micrometer:micrometer-registry-prometheus:latest.release'
 
-    compileOnly files('libs/EnderIO-1.7.10-2.3.1.16-dev.jar',
-            'libs/EnderCore-1.7.10-1.7.10-0.2.0.35_beta-dev.jar')
+    compileOnly files('libs/EnderCore-1.7.10-0.2.0.39_beta-dev.jar',
+            'libs/EnderIO-1.7.10-2.3.0.429_beta-dev.jar',
+            'libs/forestry_1.7.10-4.2.11.0-dev.jar',
+            'libs/gregtech-5.09.34.13-dev.jar',
+            'libs/industrialcraft-2-2.2.828-experimental-dev.jar',
+            'libs/appliedenergistics2-rv3-beta-18-dev.jar')
 }
 
 jar {
